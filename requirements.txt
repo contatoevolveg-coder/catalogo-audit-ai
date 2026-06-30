@@ -1,0 +1,13 @@
+# Dependências de runtime para o deploy serverless na Vercel (raiz do repo).
+# uvicorn e pytest ficam de fora de propósito (a Vercel fornece o servidor e o
+# build serverless tem limite de tamanho). Para dev local, use backend/requirements.txt.
+fastapi>=0.110.0
+sqlalchemy>=2.0.0
+pydantic>=2.6.0
+python-dotenv>=1.0.0
+psycopg2-binary>=2.9.9
+google-genai>=0.1.1
+pandas>=2.0.0
+openpyxl>=3.1.0
+httpx>=0.24.0
+python-multipart>=0.0.9
