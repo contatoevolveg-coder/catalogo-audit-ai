@@ -12,8 +12,22 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Configuração do endpoint da API
-API_URL = os.getenv("API_URL", "http://localhost:8000")
+# Configuração do endpoint da API.
+# Resolve a URL do backend nesta ordem: variável de ambiente (local/Render) ->
+# secret do Streamlit Community Cloud -> localhost (default de desenvolvimento).
+def _resolve_api_url() -> str:
+    env_url = os.getenv("API_URL")
+    if env_url:
+        return env_url
+    try:
+        secret_url = st.secrets.get("API_URL")
+        if secret_url:
+            return secret_url
+    except Exception:
+        pass
+    return "http://localhost:8000"
+
+API_URL = _resolve_api_url()
 
 # CSS customizado para visual moderno, escuro e premium
 st.markdown("""
