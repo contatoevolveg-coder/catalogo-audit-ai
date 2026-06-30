@@ -1,0 +1,43 @@
+# Ambientes virtuais
+.venv/
+venv/
+env/
+
+# Variáveis de ambiente (NUNCA versionar chaves de API)
+.env
+backend/.env
+*.env
+!*.env.example
+
+# Banco de dados local
+*.db
+*.sqlite
+*.sqlite3
+
+# Cache Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Distribuição / build
+build/
+dist/
+*.egg-info/
+
+# IDEs / Editores
+.vscode/
+.idea/
+*.swp
+
+# Logs
+*.log
+
+# Configurações locais do Claude Code (pessoais, não compartilhar)
+.claude/settings.local.json
+
+# Sistema operacional
+.DS_Store
+Thumbs.db

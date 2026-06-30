@@ -1,0 +1,43 @@
+[
+  {
+    "title": "FONE DE OUVIDO BLUETOOTH SEM FIO PROMOÇÃO FRETE GRÁTIS",
+    "description": "Fone de ouvido muito bom, bateria dura bastante. Frete grátis para todo o Brasil. Aproveite a promoção!",
+    "images": [
+      "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800",
+      "https://images.unsplash.com/photo-1484704849700-f032a568e944?w=800"
+    ],
+    "category": "Eletrônicos, Áudio e Vídeo > Fones de Ouvido",
+    "price": 79.90,
+    "marketplace": "mercado_livre"
+  },
+  {
+    "title": "camiseta masculina preta de algodão",
+    "description": "Linda camiseta de algodão, super confortável.",
+    "images": [
+      "https://images.unsplash.com/photo-1521572267360-ee0c2909d518?w=800"
+    ],
+    "category": "Moda Masculina > Roupas > Camisetas",
+    "price": 29.90,
+    "marketplace": "shopee"
+  },
+  {
+    "title": "Garrafa de Água Térmica Inox",
+    "description": "Garrafa inox que mantém a água fria ou quente por muito tempo.",
+    "images": [
+      "https://images.unsplash.com/photo-1602143407151-7111542de6e8?w=800"
+    ],
+    "category": "Esporte e Lazer > Garrafas Térmicas",
+    "price": 120.00,
+    "marketplace": "amazon"
+  },
+  {
+    "title": "CARREGADOR PORTATIL POWER BANK 10000MAH ORIGINAL",
+    "description": "Carregador portátil power bank 10000mah original para celular iphone e android.",
+    "images": [
+      "https://images.unsplash.com/photo-1609592424109-dd270a48e367?w=800"
+    ],
+    "category": "Acessórios para Celulares > Carregadores Portáteis",
+    "price": 89.90,
+    "marketplace": "magalu"
+  }
+]
