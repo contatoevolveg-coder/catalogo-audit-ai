@@ -72,3 +72,56 @@ class AuditLogResponse(BaseModel):
     token_cost_usd: float
     latency_seconds: float
     created_at: datetime
+
+# -------------------------------------------------------------
+# Novos Esquemas para a Fase 1A (Cadastro em Massa)
+# -------------------------------------------------------------
+class ValidationError(BaseModel):
+    field: str = Field(description="Campo que gerou o erro/aviso")
+    code: str = Field(description="Código curto identificando a falha")
+    message: str = Field(description="Mensagem explicativa para o usuário")
+    severity: str = Field(description="Severidade: 'error' (bloqueia) ou 'warning' (aviso)")
+
+class UploadResponse(BaseModel):
+    batch_id: int = Field(description="ID do lote (batch) de importação criado")
+    detected_columns: List[str] = Field(description="Lista de cabeçalhos identificados na planilha")
+    sample_rows: List[Dict[str, Any]] = Field(description="Amostra das primeiras linhas brutas da planilha")
+    suggested_mapping: Dict[str, str] = Field(description="Mapeamento sugerido automaticamente de de-para")
+
+class ColumnMappingRequest(BaseModel):
+    mapping: Dict[str, str] = Field(description="Mapeamento completo (coluna_planilha -> campo_canonico)")
+
+class ImportRowResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    row_number: int
+    raw_data: Dict[str, Any]
+    mapped_data: Optional[Dict[str, Any]] = None
+    validation_status: str
+    validation_errors: Optional[List[ValidationError]] = None
+    product_id: Optional[int] = None
+
+class ValidationSummary(BaseModel):
+    total: int = Field(description="Total de linhas processadas")
+    valid: int = Field(description="Total de linhas válidas")
+    invalid: int = Field(description="Total de linhas inválidas com erros de bloqueio")
+    with_warnings: int = Field(description="Total de linhas contendo avisos")
+
+class ImportBatchResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    filename: str
+    marketplace: str
+    status: str
+    column_mapping: Optional[Dict[str, str]] = None
+    total_rows: int
+    valid_rows: int
+    invalid_rows: int
+    created_at: datetime
+
+class ConfirmImportResponse(BaseModel):
+    imported: int = Field(description="Número de produtos cadastrados com sucesso")
+    skipped_invalid: int = Field(description="Número de linhas puladas por conterem erros")
+    created_product_ids: List[int] = Field(description="Lista com os IDs dos produtos criados")

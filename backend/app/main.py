@@ -16,6 +16,8 @@ from backend.app.agent import audit_product_with_gemini
 from backend.app.schemas import (
     ProductCreate, ProductResponse, SuggestionResponse, AuditLogResponse
 )
+from backend.app.routers import imports
+
 
 # Logger setup (configuração central de logging da aplicação)
 logging.basicConfig(level=logging.INFO)
@@ -42,6 +44,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Registra as rotas da Fase 1A (Cadastro em massa)
+app.include_router(imports.router)
+
 
 # -------------------------------------------------------------
 # Serviço de auditoria (lógica reutilizável)

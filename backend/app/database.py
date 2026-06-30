@@ -1,6 +1,6 @@
 import os
 from datetime import datetime, timezone
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, ForeignKey, JSON
+from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, ForeignKey, JSON, Boolean
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 
 from backend.app.config import DATABASE_URL as CONFIG_DATABASE_URL
@@ -75,6 +75,50 @@ class AuditLog(Base):
     created_at = Column(DateTime, default=_utcnow)
 
     product = relationship("Product", back_populates="logs")
+
+class ImportBatch(Base):
+    __tablename__ = "import_batches"
+
+    id = Column(Integer, primary_key=True, index=True)
+    filename = Column(String, nullable=False)
+    marketplace = Column(String, nullable=False, index=True)
+    status = Column(String, nullable=False, default="uploaded", index=True)
+    column_mapping = Column(JSON, nullable=True)
+    total_rows = Column(Integer, default=0)
+    valid_rows = Column(Integer, default=0)
+    invalid_rows = Column(Integer, default=0)
+    created_at = Column(DateTime, default=_utcnow)
+
+    # Relacionamentos
+    rows = relationship("ImportRow", back_populates="batch", cascade="all, delete-orphan")
+
+class ImportRow(Base):
+    __tablename__ = "import_rows"
+
+    id = Column(Integer, primary_key=True, index=True)
+    batch_id = Column(Integer, ForeignKey("import_batches.id", ondelete="CASCADE"), nullable=False, index=True)
+    row_number = Column(Integer, nullable=False)
+    raw_data = Column(JSON, nullable=False)
+    mapped_data = Column(JSON, nullable=True)
+    validation_status = Column(String, default="pending", index=True)
+    validation_errors = Column(JSON, nullable=True)
+    product_id = Column(Integer, ForeignKey("products.id", ondelete="SET NULL"), nullable=True, index=True)
+
+    # Relacionamentos
+    batch = relationship("ImportBatch", back_populates="rows")
+    product = relationship("Product")
+
+class ExternalCallLog(Base):
+    __tablename__ = "external_call_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    kind = Column(String, nullable=False, index=True)  # ex: image_check
+    target_url = Column(String, nullable=False)
+    status_code = Column(Integer, nullable=True)
+    success = Column(Boolean, default=False)
+    latency_seconds = Column(Float, nullable=False)
+    detail = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=_utcnow)
 
 def init_db():
     Base.metadata.create_all(bind=engine)

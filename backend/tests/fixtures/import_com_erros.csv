@@ -1,0 +1,10 @@
+title;category;price;available_quantity;condition;images;brand;model;description;gtin_ean
+Fone Válido JBL Tune 510;Eletrônicos;150.00;10;new;https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800;JBL;Tune 510;Descrição completa com mais de cinquenta caracteres para evitar warnings;7891234567890
+Título muito longo que ultrapassa com certeza o limite de sessenta caracteres imposto pelo Mercado Livre;Eletrônicos;199.90;10;new;https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800;JBL;Tune;Descrição correta;7891234567890
+Fone com frete grátis e desconto;Eletrônicos;199.90;10;new;https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800;JBL;Tune;Descrição correta;7891234567890
+Fone Preço Zero;Eletrônicos;0.00;10;new;https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800;JBL;Tune;Descrição correta;7891234567890
+Fone Sem Estoque;Eletrônicos;199.90;0;new;https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800;JBL;Tune;Descrição correta;7891234567890
+Fone Condição Inválida;Eletrônicos;199.90;10;semi-novo;https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800;JBL;Tune;Descrição correta;7891234567890
+Fone Imagem Quebrada;Eletrônicos;199.90;10;new;https://invalid-url-domain-xyz.com/image.jpg;JBL;Tune;Descrição correta;7891234567890
+Fone Sem Categoria;;199.90;10;new;https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800;JBL;Tune;Descrição correta;7891234567890
+Fone com Avisos;Eletrônicos;100.00;5;new;https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800;;;Curta;

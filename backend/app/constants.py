@@ -45,3 +45,22 @@ MARKETPLACE_TITLE_LIMITS = {
     Marketplace.SHEIN: 100,
     Marketplace.TIKTOK_SHOP: 100,
 }
+
+# Lista centralizada de termos promocionais proibidos (Mercado Livre e outros)
+PROHIBITED_PROMOTIONAL_TERMS = [
+    "frete grátis",
+    "frete gratis",
+    "promoção",
+    "promocao",
+    "imperdível",
+    "imperdivel",
+    "original",
+    "barato",
+    "desconto",
+    "de graça",
+    "de graca",
+    "promo",
+    "oferta",
+    "queima"
+]
+
