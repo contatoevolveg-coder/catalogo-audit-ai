@@ -96,6 +96,26 @@ python backend/test_agent.py
 > Roadmap: migrar os testes manuais para `pytest` com `fastapi.testclient` e
 > introduzir migrações de schema com Alembic.
 
+## Deploy (Render)
+
+O repositório inclui um [render.yaml](render.yaml) (Blueprint) que sobe os dois
+serviços de uma vez.
+
+1. Acesse https://dashboard.render.com e faça login com a conta do GitHub.
+2. **New → Blueprint** e selecione o repositório `catalogo-audit-ai`.
+3. O Render detecta o `render.yaml` e cria `catalogo-audit-backend` e
+   `catalogo-audit-dashboard`. Clique em **Apply**.
+4. Aguarde o **backend** ficar online e copie a URL pública dele
+   (ex.: `https://catalogo-audit-backend.onrender.com`).
+5. No serviço **dashboard** → **Environment**, defina `API_URL` com essa URL e
+   salve (dispara um redeploy).
+
+Observações:
+- Roda em **modo mock** por padrão (sem chave real). Para usar o Gemini de
+  verdade, troque `GEMINI_API_KEY` no serviço do backend.
+- O free tier hiberna após inatividade (cold start ~50s) e o SQLite é efêmero —
+  para persistência, crie um PostgreSQL no Render e aponte `DATABASE_URL`.
+
 ## Notas
 
 - O modo `mock` permite demonstrar o fluxo completo sem consumir a API.

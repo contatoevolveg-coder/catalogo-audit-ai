@@ -1,0 +1,40 @@
+# Render Blueprint — sobe o backend (FastAPI) e o dashboard (Streamlit).
+# Deploy: https://dashboard.render.com → New → Blueprint → conecte este repositório.
+# Docs: https://render.com/docs/blueprint-spec
+services:
+  # ---------------------------------------------------------------
+  # Backend - API FastAPI
+  # ---------------------------------------------------------------
+  - type: web
+    name: catalogo-audit-backend
+    runtime: python
+    plan: free
+    buildCommand: "pip install -r backend/requirements.txt"
+    startCommand: "uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT"
+    healthCheckPath: /health
+    envVars:
+      # Modo mock: roda sem chave real do Gemini (ideal para demo).
+      # Troque por uma chave do Google AI Studio para usar a IA de verdade.
+      - key: GEMINI_API_KEY
+        value: mock
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      # SQLite local (efêmero no free tier; troque por uma DATABASE_URL
+      # PostgreSQL do Render se quiser persistência entre reinícios).
+      - key: DATABASE_URL
+        value: ""
+
+  # ---------------------------------------------------------------
+  # Frontend - Dashboard Streamlit
+  # ---------------------------------------------------------------
+  - type: web
+    name: catalogo-audit-dashboard
+    runtime: python
+    plan: free
+    buildCommand: "pip install -r dashboard/requirements.txt"
+    startCommand: "streamlit run dashboard/app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true"
+    envVars:
+      # URL pública do backend. Preencha no painel do Render APÓS o backend
+      # subir (ex.: https://catalogo-audit-backend.onrender.com).
+      - key: API_URL
+        sync: false
