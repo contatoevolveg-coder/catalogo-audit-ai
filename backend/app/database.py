@@ -15,9 +15,13 @@ def _utcnow() -> datetime:
 DATABASE_URL = CONFIG_DATABASE_URL
 
 if not DATABASE_URL or DATABASE_URL.strip() == "":
-    # Localiza o arquivo de banco na raiz do projeto
-    project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-    db_path = os.path.abspath(os.path.join(project_root, "catalog_audit.db"))
+    # Fallback para SQLite. Em ambiente serverless (Vercel) o diretório do
+    # projeto é somente-leitura, então usamos /tmp (gravável, porém efêmero).
+    if os.getenv("VERCEL"):
+        db_path = "/tmp/catalog_audit.db"
+    else:
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        db_path = os.path.abspath(os.path.join(project_root, "catalog_audit.db"))
     DATABASE_URL = f"sqlite:///{db_path}"
     engine_args = {"connect_args": {"check_same_thread": False}}
 else:

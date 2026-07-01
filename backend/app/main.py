@@ -25,9 +25,13 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Inicializa o banco de dados e cria as tabelas
+    # Inicializa o banco de dados e cria as tabelas. Em serverless não deixamos
+    # uma falha aqui derrubar toda a aplicação (as tabelas já existem no Postgres).
     logger.info("Inicializando o banco de dados...")
-    init_db()
+    try:
+        init_db()
+    except Exception:
+        logger.exception("Falha ao inicializar o banco de dados (seguindo mesmo assim).")
     yield
 
 app = FastAPI(
