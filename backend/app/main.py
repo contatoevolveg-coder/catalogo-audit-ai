@@ -139,6 +139,9 @@ def create_product(product: ProductCreate, db: Session = Depends(get_db)):
         price=product.price,
         marketplace=product.marketplace.value,
         status=ProductStatus.PENDING.value,
+        available_quantity=product.available_quantity,
+        condition=product.condition,
+        attributes=product.attributes,
     )
     db.add(db_product)
     db.commit()
