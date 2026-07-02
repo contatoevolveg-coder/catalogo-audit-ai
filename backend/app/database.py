@@ -42,6 +42,9 @@ class Product(Base):
     price = Column(Float, nullable=True)
     marketplace = Column(String, nullable=False, index=True)  # mercado_livre, shopee, amazon, magalu, etc.
     status = Column(String, default="pending", index=True)    # pending, audited, optimized
+    available_quantity = Column(Integer, nullable=True)       # estoque disponível
+    condition = Column(String, nullable=True)                 # new, used
+    attributes = Column(JSON, nullable=True)                  # {brand, model, gtin_ean, ...}
     created_at = Column(DateTime, default=_utcnow)
 
     # Relacionamentos

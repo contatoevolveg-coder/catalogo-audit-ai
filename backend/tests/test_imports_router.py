@@ -231,3 +231,44 @@ def test_discard_batch(client):
     assert db.query(ImportBatch).filter(ImportBatch.id == batch_id).first() is None
     assert db.query(ImportRow).filter(ImportRow.batch_id == batch_id).all() == []
     db.close()
+
+def _upload_map_validate(client, fixture_name="import_valido.csv"):
+    """Helper: sobe a fixture, mapeia e valida, devolvendo o batch_id."""
+    fixture_path = os.path.join(os.path.dirname(__file__), "fixtures", fixture_name)
+    with open(fixture_path, "rb") as f:
+        up = client.post(
+            "/imports",
+            files={"file": (os.path.basename(fixture_path), f, "text/csv")},
+            data={"marketplace": "mercado_livre"},
+        ).json()
+    batch_id = up["batch_id"]
+    client.post(f"/imports/{batch_id}/mapping", json={"mapping": up["suggested_mapping"]})
+    client.post(f"/imports/{batch_id}/validate")
+    return batch_id
+
+def test_confirm_persists_all_fields(client, mock_httpx_get):
+    """Garante que estoque, condição e atributos (marca/modelo/gtin) são persistidos no produto."""
+    batch_id = _upload_map_validate(client)
+    client.post(f"/imports/{batch_id}/confirm")
+
+    db = TestingSessionLocal()
+    prod = db.query(Product).filter(Product.title == "Fone de Ouvido Bluetooth JBL Tune 510").first()
+    assert prod is not None
+    assert prod.available_quantity == 10
+    assert prod.condition == "new"
+    assert prod.attributes["brand"] == "JBL"
+    assert prod.attributes["model"] == "Tune 510BT"
+    assert prod.attributes["gtin_ean"] == "7891234567890"
+    db.close()
+
+def test_double_confirm_blocked(client, mock_httpx_get):
+    """Confirmar o mesmo lote duas vezes deve ser bloqueado (evita produtos duplicados)."""
+    batch_id = _upload_map_validate(client)
+    first = client.post(f"/imports/{batch_id}/confirm")
+    assert first.status_code == 200
+    second = client.post(f"/imports/{batch_id}/confirm")
+    assert second.status_code == 400
+
+    db = TestingSessionLocal()
+    assert db.query(Product).count() == 3  # não duplicou
+    db.close()

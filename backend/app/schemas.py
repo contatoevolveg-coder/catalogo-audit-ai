@@ -34,6 +34,9 @@ class ProductBase(BaseModel):
     category: Optional[str] = Field(default=None, max_length=300)
     price: Optional[float] = Field(default=None, ge=0, description="Preço em reais; não pode ser negativo")
     marketplace: Marketplace
+    available_quantity: Optional[int] = Field(default=None, ge=0, description="Estoque disponível")
+    condition: Optional[str] = Field(default=None, description="Condição: new ou used")
+    attributes: Optional[Dict[str, Any]] = Field(default=None, description="Atributos extras (marca, modelo, gtin_ean)")
 
 class ProductCreate(ProductBase):
     pass

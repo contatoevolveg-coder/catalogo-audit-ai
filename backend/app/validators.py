@@ -62,7 +62,8 @@ def validate_image_url(url: str, db: Session) -> Tuple[bool, str]:
     latency = time.time() - start_time
     detail["error_message"] = error_msg
 
-    # Salva no log de chamadas externas
+    # Registra o log de chamada externa na sessão. O commit é feito pelo chamador
+    # (validate_batch) numa única transação — evita um commit por imagem.
     call_log = ExternalCallLog(
         kind="image_check",
         target_url=url,
@@ -72,7 +73,6 @@ def validate_image_url(url: str, db: Session) -> Tuple[bool, str]:
         detail=detail
     )
     db.add(call_log)
-    db.commit()
 
     return success, error_msg
 

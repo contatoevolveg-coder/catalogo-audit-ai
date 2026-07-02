@@ -219,11 +219,33 @@ def validate_batch(batch_id: int, db: Session) -> ValidationSummary:
         with_warnings=with_warnings
     )
 
+def _normalize_condition(value: Any) -> Any:
+    """Normaliza a condição para o padrão canônico (new/used), aceitando PT-BR."""
+    if value is None:
+        return None
+    v = str(value).strip().lower()
+    return {"novo": "new", "new": "new", "usado": "used", "used": "used"}.get(v, v)
+
+
+def _clean_gtin(value: Any) -> Any:
+    """Limpa o GTIN/EAN removendo o sufixo '.0' que o pandas costuma gerar."""
+    if value is None:
+        return None
+    s = str(value).strip()
+    if s.endswith(".0"):
+        s = s[:-2]
+    return s or None
+
+
 def confirm_import(batch_id: int, db: Session) -> ConfirmImportResponse:
     """Confirma a importação criando produtos pendentes somente para as linhas válidas."""
     batch = db.query(ImportBatch).filter(ImportBatch.id == batch_id).first()
     if not batch:
         raise HTTPException(status_code=404, detail="Lote não encontrado.")
+
+    # Evita reimportação: confirmar duas vezes criaria produtos duplicados.
+    if batch.status == "imported":
+        raise HTTPException(status_code=400, detail="Este lote já foi importado.")
 
     if batch.status != "validated":
         # Força validação se ainda não foi feita
@@ -245,7 +267,14 @@ def confirm_import(batch_id: int, db: Session) -> ConfirmImportResponse:
         if isinstance(imgs, str):
             imgs = [img.strip() for img in imgs.split(",") if img.strip()]
 
-        # Cria produto
+        # Converte estoque para inteiro quando possível
+        qty_raw = data.get("available_quantity")
+        try:
+            qty = int(float(qty_raw)) if qty_raw is not None and str(qty_raw).strip() != "" else None
+        except (ValueError, TypeError):
+            qty = None
+
+        # Cria produto preservando TODOS os campos validados
         product = Product(
             title=data["title"],
             description=data.get("description"),
@@ -253,16 +282,22 @@ def confirm_import(batch_id: int, db: Session) -> ConfirmImportResponse:
             price=float(data["price"]) if data.get("price") is not None else 0.0,
             marketplace=batch.marketplace,
             status="pending",
-            images=imgs
+            images=imgs,
+            available_quantity=qty,
+            condition=_normalize_condition(data.get("condition")),
+            attributes={
+                "brand": data.get("brand"),
+                "model": data.get("model"),
+                "gtin_ean": _clean_gtin(data.get("gtin_ean")),
+            },
         )
         db.add(product)
-        db.commit()  # commit individual para obter id
-        db.refresh(product)
+        db.flush()  # obtém o id sem encerrar a transação
 
         row.product_id = product.id
         created_ids.append(product.id)
 
-    # Marca o lote como importado
+    # Marca o lote como importado e comita tudo de uma vez (atômico)
     batch.status = "imported"
     db.commit()
 
