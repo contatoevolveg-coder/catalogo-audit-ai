@@ -1,0 +1,29 @@
+# Configuração do backend para o runtime Python da Vercel.
+# Quando este arquivo existe, o build da Vercel (uv) instala as dependências a
+# partir daqui. Mantemos requirements.txt em paralelo para dev local/Render.
+[project]
+name = "catalogo-audit-backend"
+version = "0.1.0"
+description = "Backend FastAPI do Catalogo Audit AI Agent"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.110.0",
+    "sqlalchemy>=2.0.0",
+    "pydantic>=2.6.0",
+    "python-dotenv>=1.0.0",
+    "psycopg2-binary>=2.9.9",
+    "google-genai>=0.1.1",
+    "pandas>=2.0.0",
+    "openpyxl>=3.1.0",
+    "httpx>=0.24.0",
+    "python-multipart>=0.0.9",
+]
+
+# Não tratar este repositório como um pacote instalável (só gerenciar o ambiente
+# com as dependências acima) — evita o uv exigir um build-system/backend.
+[tool.uv]
+package = false
+
+# Runtime Python novo da Vercel: aponta o entrypoint ASGI explicitamente.
+[tool.vercel]
+entrypoint = "api/index.py"
