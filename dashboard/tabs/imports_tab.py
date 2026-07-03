@@ -13,7 +13,7 @@ def render(api_url: str, headers: dict) -> None:
     # Valida cabeçalhos obrigatórios (Fase 7: todos os endpoints de /imports exigem login)
     if not headers or "Authorization" not in headers or not headers["Authorization"].strip():
         st.error("Chave de administrador ausente ou incorreta. Preencha o campo 'Admin API Key' na barra lateral.")
-        st.stop()
+        return
 
     # 1. Download de Template
     with st.expander("📥 Baixar Modelo de Planilha (Template)"):

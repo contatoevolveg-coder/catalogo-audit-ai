@@ -12,7 +12,7 @@ def render(api_url: str, headers: dict) -> None:
     # Valida cabeçalhos obrigatórios
     if not headers or "Authorization" not in headers or not headers["Authorization"].strip():
         st.error("Chave de administrador ausente ou incorreta. Preencha o campo 'Admin API Key' na barra lateral.")
-        st.stop()
+        return
 
     # 1. Formulário de Criação de Credenciais
     with st.expander("➕ Cadastrar Nova Credencial"):
@@ -84,7 +84,7 @@ def render(api_url: str, headers: dict) -> None:
             creds = r_list.json()
         elif r_list.status_code in [401, 503]:
             st.error("🔑 Chave de administrador ausente ou incorreta. Preencha o campo 'Admin API Key' na barra lateral.")
-            st.stop()
+            return
         else:
             st.error(f"Erro ao obter credenciais: {r_list.text}")
             creds = []

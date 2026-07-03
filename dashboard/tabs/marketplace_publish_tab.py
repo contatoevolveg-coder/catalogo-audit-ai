@@ -13,7 +13,7 @@ def render(api_url: str, headers: dict) -> None:
     # Valida cabeçalhos obrigatórios
     if not headers or "Authorization" not in headers or not headers["Authorization"].strip():
         st.error("Chave de administrador ausente ou incorreta. Preencha o campo 'Admin API Key' na barra lateral.")
-        st.stop()
+        return
 
     # 1. Busca produtos para seleção
     try:
@@ -25,11 +25,11 @@ def render(api_url: str, headers: dict) -> None:
             products = []
     except Exception as e:
         st.error(f"Erro ao conectar com o backend: {e}")
-        st.stop()
+        return
 
     if not products:
         st.info("Nenhum produto cadastrado no catálogo. Importe ou cadastre anúncios primeiro.")
-        st.stop()
+        return
 
     # Selectbox de produto
     prod_options = {f"{p['title']} (ID: {p['id']})": p for p in products}
@@ -90,7 +90,7 @@ def render(api_url: str, headers: dict) -> None:
 
     if not ml_creds:
         st.warning("⚠️ Nenhuma credencial do Mercado Livre cadastrada no cofre. Vá à aba de Credenciais primeiro.")
-        st.stop()
+        return
 
     # Monta lista de opções marcando credenciais não válidas
     cred_options = {}
