@@ -17,7 +17,7 @@ def render(api_url: str, headers: dict) -> None:
 
     # 1. Busca produtos para seleção
     try:
-        r_prods = requests.get(f"{api_url}/products")
+        r_prods = requests.get(f"{api_url}/products", headers=headers)
         if r_prods.status_code == 200:
             products = r_prods.json()
         else:

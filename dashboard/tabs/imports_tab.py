@@ -6,9 +6,14 @@ from datetime import datetime
 def render(api_url: str, headers: dict) -> None:
     st.markdown("### 📦 Cadastro em Massa de Produtos (Planilhas)")
     st.markdown("""
-    Importe lotes de produtos a partir de planilhas CSV ou Excel, 
+    Importe lotes de produtos a partir de planilhas CSV ou Excel,
     ajuste o mapeamento de colunas, valide inconsistências e realize auditorias automáticas.
     """)
+
+    # Valida cabeçalhos obrigatórios (Fase 7: todos os endpoints de /imports exigem login)
+    if not headers or "Authorization" not in headers or not headers["Authorization"].strip():
+        st.error("Chave de administrador ausente ou incorreta. Preencha o campo 'Admin API Key' na barra lateral.")
+        st.stop()
 
     # 1. Download de Template
     with st.expander("📥 Baixar Modelo de Planilha (Template)"):
@@ -23,9 +28,8 @@ def render(api_url: str, headers: dict) -> None:
             st.write("")  # Alinhamento vertical
             st.write("")
             try:
-                # O endpoint template não exige admin headers pois é de leitura pública
                 template_url = f"{api_url}/imports/template?marketplace={template_mkt}"
-                r_temp = requests.get(template_url)
+                r_temp = requests.get(template_url, headers=headers)
                 if r_temp.status_code == 200:
                     st.download_button(
                         label="📄 Baixar CSV",
@@ -64,9 +68,8 @@ def render(api_url: str, headers: dict) -> None:
         data = {"marketplace": import_mkt}
         with st.spinner("Enviando arquivo e analisando cabeçalhos..."):
             try:
-                # O endpoint POST /imports não exige admin key por padrão (livre para vendedores importarem)
-                r = requests.post(f"{api_url}/imports", files=files, data=data)
-                if r.status_code == 201:
+                r = requests.post(f"{api_url}/imports", files=files, data=data, headers=headers)
+                if r.status_code == 200:
                     res = r.json()
                     st.session_state["import_batch_id"] = res["batch_id"]
                     st.session_state["import_detected_columns"] = res["detected_columns"]
@@ -87,7 +90,7 @@ def render(api_url: str, headers: dict) -> None:
         
         # Carrega dados do lote atualizado do banco
         try:
-            batch_data = requests.get(f"{api_url}/imports/{batch_id}").json()
+            batch_data = requests.get(f"{api_url}/imports/{batch_id}", headers=headers).json()
             st.session_state["import_status"] = batch_data["status"]
         except Exception as e:
             st.error(f"Erro ao atualizar status do lote: {e}")
@@ -154,7 +157,8 @@ def render(api_url: str, headers: dict) -> None:
                     try:
                         r_map = requests.post(
                             f"{api_url}/imports/{batch_id}/mapping",
-                            json={"mapping": new_mapping}
+                            json={"mapping": new_mapping},
+                            headers=headers
                         )
                         if r_map.status_code == 200:
                             st.success("Mapeamento salvo com sucesso!")
@@ -173,7 +177,7 @@ def render(api_url: str, headers: dict) -> None:
             if st.button("🔍 Rodar Validação dos Dados"):
                 with st.spinner("Validando linhas..."):
                     try:
-                        r_val = requests.post(f"{api_url}/imports/{batch_id}/validate")
+                        r_val = requests.post(f"{api_url}/imports/{batch_id}/validate", headers=headers)
                         if r_val.status_code == 200:
                             st.success("Validação executada com sucesso!")
                             st.session_state["import_status"] = "validated"
@@ -201,7 +205,7 @@ def render(api_url: str, headers: dict) -> None:
             if invalid_rows > 0:
                 st.warning("⚠️ Foram detectados erros em algumas linhas da planilha:")
                 try:
-                    r_rows = requests.get(f"{api_url}/imports/{batch_id}/rows?status=invalid").json()
+                    r_rows = requests.get(f"{api_url}/imports/{batch_id}/rows?status=invalid", headers=headers).json()
                     for idx, row in enumerate(r_rows):
                         row_num = row["row_number"]
                         errors = row.get("validation_errors", [])
@@ -237,7 +241,7 @@ def render(api_url: str, headers: dict) -> None:
                 with st.spinner("Confirmando importação e criando produtos no banco..."):
                     try:
                         confirm_url = f"{api_url}/imports/{batch_id}/confirm?auto_audit={str(auto_audit).lower()}&max_audit={max_audit}"
-                        r_conf = requests.post(confirm_url)
+                        r_conf = requests.post(confirm_url, headers=headers)
                         if r_conf.status_code == 200:
                             res_conf = r_conf.json()
                             st.success("Importação concluída!")
@@ -279,7 +283,7 @@ def render(api_url: str, headers: dict) -> None:
     # 4. Seção de Lotes Anteriores
     st.markdown("#### 📂 Histórico de Lotes Importados")
     try:
-        batches = requests.get(f"{api_url}/imports").json()
+        batches = requests.get(f"{api_url}/imports", headers=headers).json()
     except Exception as e:
         st.error(f"Erro de conexão ao buscar histórico de lotes: {e}")
         batches = []
@@ -314,7 +318,7 @@ def render(api_url: str, headers: dict) -> None:
             
             if btn_del and del_id:
                 try:
-                    r_del = requests.delete(f"{api_url}/imports/{del_id}")
+                    r_del = requests.delete(f"{api_url}/imports/{del_id}", headers=headers)
                     if r_del.status_code == 200:
                         st.success(f"Lote #{del_id} excluído com sucesso!")
                         st.rerun()
