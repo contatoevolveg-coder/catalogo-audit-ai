@@ -6,41 +6,41 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from backend.app.main import app
-from backend.app.database import Base, get_db, Product, ImportBatch, ImportRow, ExternalCallLog
+from backend.app.database import Base, get_db, Product, ImportBatch, ImportRow, ExternalCallLog, Suggestion
 
 # Configura banco de dados temporário SQLite para os testes do roteador
 TEST_DB_PATH = "test_temp.db"
 engine = create_engine(f"sqlite:///{TEST_DB_PATH}", connect_args={"check_same_thread": False})
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-def override_get_db():
-    db = TestingSessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-# Sobrescreve a dependência get_db do FastAPI
-app.dependency_overrides[get_db] = override_get_db
-
 @pytest.fixture(autouse=True)
 def setup_db():
-    """Recria a estrutura de tabelas no banco de dados temporário para cada função de teste."""
+    """Recria a estrutura de tabelas no banco de dados temporário e sobrescreve a dependência get_db."""
     Base.metadata.create_all(bind=engine)
+    
+    def test_get_db():
+        db = TestingSessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+            
+    app.dependency_overrides[get_db] = test_get_db
     yield
+    app.dependency_overrides.pop(get_db, None)
     Base.metadata.drop_all(bind=engine)
-    # Tenta remover o arquivo temporário
     if os.path.exists(TEST_DB_PATH):
         try:
             os.remove(TEST_DB_PATH)
         except Exception:
             pass
 
-@pytest.fixture
-def client():
-    """Retorna um TestClient para fazer chamadas HTTP na API."""
-    with TestClient(app) as c:
-        yield c
+
+def test_imports_unauthorized(client):
+    """Garante que endpoints de importação retornam 401 se JWT estiver ausente."""
+    response = client.get("/imports", headers={"skip_auth": True})
+    assert response.status_code == 401
+
 
 @pytest.fixture
 def mock_httpx_get(monkeypatch):
@@ -272,3 +272,111 @@ def test_double_confirm_blocked(client, mock_httpx_get):
     db = TestingSessionLocal()
     assert db.query(Product).count() == 3  # não duplicou
     db.close()
+
+def test_confirm_import_auto_audit_true(client, mock_httpx_get):
+    """Confirma o lote com auto_audit=True e verifica se todos os produtos foram auditados com sucesso."""
+    batch_id = _upload_map_validate(client)
+    
+    response = client.post(f"/imports/{batch_id}/confirm?auto_audit=true")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["imported"] == 3
+    assert data["audited"] == 3
+    assert data["audit_skipped"] == 0
+    assert data["audit_errors"] == []
+
+    db = TestingSessionLocal()
+    # Verifica que todos os 3 produtos foram criados e têm status 'audited'
+    products = db.query(Product).all()
+    assert len(products) == 3
+    for p in products:
+        assert p.status == "audited"
+
+    # Verifica que existem 3 sugestões geradas
+    suggestions = db.query(Suggestion).all()
+    assert len(suggestions) == 3
+    db.close()
+
+def test_confirm_import_auto_audit_max_audit_1(client, mock_httpx_get):
+    """Confirma o lote com auto_audit=True e max_audit=1, garantindo que o limite seja respeitado."""
+    batch_id = _upload_map_validate(client)
+
+    response = client.post(f"/imports/{batch_id}/confirm?auto_audit=true&max_audit=1")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["imported"] == 3
+    assert data["audited"] == 1
+    assert data["audit_skipped"] == 2
+    assert data["audit_errors"] == []
+
+    db = TestingSessionLocal()
+    # Verifica status dos produtos (1 auditado, 2 pendentes)
+    audited_prods = db.query(Product).filter(Product.status == "audited").all()
+    pending_prods = db.query(Product).filter(Product.status == "pending").all()
+    assert len(audited_prods) == 1
+    assert len(pending_prods) == 2
+
+    # Verifica que apenas 1 sugestão foi criada no banco
+    assert db.query(Suggestion).count() == 1
+    db.close()
+
+def test_confirm_import_auto_audit_false_explicit(client, mock_httpx_get):
+    """Confirma o lote com auto_audit=False e garante comportamento padrão (produtos pending)."""
+    batch_id = _upload_map_validate(client)
+
+    response = client.post(f"/imports/{batch_id}/confirm?auto_audit=false")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["imported"] == 3
+    assert data["audited"] == 0
+    assert data["audit_skipped"] == 0
+    assert data["audit_errors"] == []
+
+    db = TestingSessionLocal()
+    # Todos os produtos devem estar pendentes
+    products = db.query(Product).all()
+    assert len(products) == 3
+    for p in products:
+        assert p.status == "pending"
+
+    # Nenhuma sugestão criada
+    assert db.query(Suggestion).count() == 0
+    db.close()
+
+def test_confirm_import_auto_audit_resilience(client, mock_httpx_get, monkeypatch):
+    """Testa resiliência a falhas: se a auditoria de um produto falhar, o lote é confirmado normalmente e os outros são auditados."""
+    batch_id = _upload_map_validate(client)
+
+    # Mock perform_product_audit para falhar no segundo produto auditado
+    from backend.app.services.import_service import perform_product_audit as original_perform_product_audit
+    
+    call_count = 0
+    def mock_perform(product, db):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 2:
+            raise ValueError("Erro simulado na auditoria do produto")
+        return original_perform_product_audit(product, db)
+
+    monkeypatch.setattr("backend.app.services.import_service.perform_product_audit", mock_perform)
+
+    response = client.post(f"/imports/{batch_id}/confirm?auto_audit=true")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["imported"] == 3
+    assert data["audited"] == 2
+    assert data["audit_skipped"] == 1
+    assert len(data["audit_errors"]) == 1
+    assert "Erro simulado" in data["audit_errors"][0]["error"]
+
+    db = TestingSessionLocal()
+    # 2 produtos devem ter sido auditados, 1 deve ter continuado pendente
+    audited_prods = db.query(Product).filter(Product.status == "audited").all()
+    pending_prods = db.query(Product).filter(Product.status == "pending").all()
+    assert len(audited_prods) == 2
+    assert len(pending_prods) == 1
+    
+    # 2 sugestões devem existir
+    assert db.query(Suggestion).count() == 2
+    db.close()
+

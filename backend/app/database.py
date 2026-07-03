@@ -1,6 +1,6 @@
 import os
 from datetime import datetime, timezone
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, ForeignKey, JSON, Boolean
+from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, ForeignKey, JSON, Boolean, Text
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 
 from backend.app.config import DATABASE_URL as CONFIG_DATABASE_URL
@@ -45,7 +45,11 @@ class Product(Base):
     available_quantity = Column(Integer, nullable=True)       # estoque disponível
     condition = Column(String, nullable=True)                 # new, used
     attributes = Column(JSON, nullable=True)                  # {brand, model, gtin_ean, ...}
+    external_listing_id = Column(String, nullable=True)       # ID retornado após publicação com sucesso
+    erp_sku = Column(String, nullable=True, index=True)       # SKU do Bling ERP vinculado manualmente
     created_at = Column(DateTime, default=_utcnow)
+
+
 
     # Relacionamentos
     suggestions = relationship("Suggestion", back_populates="product", cascade="all, delete-orphan")
@@ -126,6 +130,85 @@ class ExternalCallLog(Base):
     latency_seconds = Column(Float, nullable=False)
     detail = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=_utcnow)
+
+class Credential(Base):
+    __tablename__ = "credentials"
+
+    id = Column(Integer, primary_key=True, index=True)
+    provider = Column(String, nullable=False, index=True)  # ex.: "mercado_livre", "shopee", "bling"
+    provider_type = Column(String, nullable=False)  # "marketplace" ou "erp"
+    label = Column(String, nullable=False)  # nome amigável dado pelo usuário
+    encrypted_secret = Column(Text, nullable=False)  # payload do Fernet (string base64)
+    masked_preview = Column(String, nullable=False)  # calculado na criação/rotação, ex. "••••7f3a"
+    scopes = Column(JSON, nullable=False)  # lista de strings validadas contra um conjunto permitido
+    status = Column(String, default="untested", nullable=False, index=True)  # untested|valid|expired|error
+    status_detail = Column(String, nullable=True)
+    last_checked_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+class MarketplacePublication(Base):
+    __tablename__ = "marketplace_publications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    product_id = Column(Integer, ForeignKey("products.id", ondelete="CASCADE"), nullable=False, index=True)
+    credential_id = Column(Integer, ForeignKey("credentials.id"), nullable=False, index=True)
+    marketplace_item_id = Column(String, nullable=True)  # ID retornado pelo ML (ex.: "MLB123456")
+    category_id = Column(String, nullable=False)  # categoria do ML usada na publicação
+    status = Column(String, nullable=False, index=True)  # "success" ou "error"
+    error_detail = Column(Text, nullable=True)  # mensagem/corpo de erro do ML quando falha
+    request_payload = Column(JSON, nullable=False)  # payload enviado ao ML (SEM o token)
+    response_payload = Column(JSON, nullable=True)  # resposta crua do ML (sucesso ou erro)
+    created_at = Column(DateTime, default=_utcnow)
+
+    # Relacionamentos
+    product = relationship("Product")
+    credential = relationship("Credential")
+
+class ErpSyncLog(Base):
+    __tablename__ = "erp_sync_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    product_id = Column(Integer, ForeignKey("products.id", ondelete="CASCADE"), nullable=False, index=True)
+    credential_id = Column(Integer, ForeignKey("credentials.id"), nullable=False, index=True)
+    erp_sku = Column(String, nullable=False)
+    sync_type = Column(String, default="stock_pull", nullable=False)
+    status = Column(String, nullable=False, index=True)  # success | error | not_found
+    previous_quantity = Column(Integer, nullable=True)
+    new_quantity = Column(Integer, nullable=True)
+    error_detail = Column(Text, nullable=True)
+    response_payload = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=_utcnow)
+
+    # Relacionamentos
+    product = relationship("Product")
+    credential = relationship("Credential")
+
+
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String, unique=True, index=True, nullable=False)
+    hashed_password = Column(String, nullable=False)
+    role = Column(String, default="admin")
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=_utcnow)
+
+
+class AuthAttempt(Base):
+    __tablename__ = "auth_attempts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    action = Column(String, index=True, nullable=False)  # "login" ou "register"
+    identifier = Column(String, index=True, nullable=False)  # username ou IP
+    ip_address = Column(String, index=True, nullable=True)
+    success = Column(Boolean, nullable=False)
+    created_at = Column(DateTime, default=_utcnow, index=True)
+
+
 
 def init_db():
     Base.metadata.create_all(bind=engine)

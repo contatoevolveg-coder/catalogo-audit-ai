@@ -10,6 +10,8 @@ from backend.app.database import ImportBatch, ImportRow, Product
 from backend.app.marketplace_fields import get_canonical_fields
 from backend.app.validators import validate_row_ml
 from backend.app.schemas import UploadResponse, ValidationSummary, ConfirmImportResponse
+from backend.app.services.audit_service import perform_product_audit
+
 
 def read_planilha(file_content: bytes, filename: str) -> pd.DataFrame:
     """Lê o arquivo de planilha (Excel ou CSV) utilizando pandas e retorna um DataFrame.
@@ -237,8 +239,15 @@ def _clean_gtin(value: Any) -> Any:
     return s or None
 
 
-def confirm_import(batch_id: int, db: Session) -> ConfirmImportResponse:
-    """Confirma a importação criando produtos pendentes somente para as linhas válidas."""
+def confirm_import(
+    batch_id: int, 
+    db: Session, 
+    auto_audit: bool = False, 
+    max_audit: int = 15
+) -> ConfirmImportResponse:
+    """Confirma a importação criando produtos pendentes somente para as linhas válidas.
+    Se auto_audit for True, realiza a auditoria imediata via Gemini para os produtos criados.
+    """
     batch = db.query(ImportBatch).filter(ImportBatch.id == batch_id).first()
     if not batch:
         raise HTTPException(status_code=404, detail="Lote não encontrado.")
@@ -258,6 +267,7 @@ def confirm_import(batch_id: int, db: Session) -> ConfirmImportResponse:
     ).all()
 
     created_ids = []
+    created_products = []
 
     for row in valid_rows:
         data = row.mapped_data
@@ -296,17 +306,39 @@ def confirm_import(batch_id: int, db: Session) -> ConfirmImportResponse:
 
         row.product_id = product.id
         created_ids.append(product.id)
+        created_products.append(product)
 
     # Marca o lote como importado e comita tudo de uma vez (atômico)
     batch.status = "imported"
     db.commit()
+
+    # Realiza auditoria automática pós-importação se solicitado
+    audited_count = 0
+    audit_skipped_count = 0
+    audit_errors = []
+
+    if auto_audit:
+        for product in created_products:
+            if audited_count < max_audit:
+                try:
+                    perform_product_audit(product, db)
+                    audited_count += 1
+                except Exception as e:
+                    db.rollback()
+                    audit_errors.append({"product_id": product.id, "error": str(e)})
+                    audit_skipped_count += 1
+            else:
+                audit_skipped_count += 1
 
     skipped = batch.total_rows - len(created_ids)
 
     return ConfirmImportResponse(
         imported=len(created_ids),
         skipped_invalid=skipped,
-        created_product_ids=created_ids
+        created_product_ids=created_ids,
+        audited=audited_count,
+        audit_skipped=audit_skipped_count,
+        audit_errors=audit_errors
     )
 
 def discard_batch(batch_id: int, db: Session) -> None:

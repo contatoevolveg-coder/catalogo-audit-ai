@@ -11,12 +11,15 @@ from sqlalchemy.orm import Session
 
 from backend.app.config import CORS_ORIGINS
 from backend.app.constants import ProductStatus, SuggestionStatus
-from backend.app.database import init_db, get_db, Product, Suggestion, AuditLog
+from backend.app.database import init_db, get_db, Product, Suggestion, AuditLog, User
 from backend.app.agent import audit_product_with_gemini
 from backend.app.schemas import (
     ProductCreate, ProductResponse, SuggestionResponse, AuditLogResponse
 )
-from backend.app.routers import imports
+from backend.app.routers import imports, credentials, marketplace_publish, erp_bling, auth
+from backend.app.services.audit_service import perform_product_audit
+from backend.app.security.dependencies import get_current_user
+
 
 
 # Logger setup (configuração central de logging da aplicação)
@@ -51,85 +54,27 @@ app.add_middleware(
 
 # Registra as rotas da Fase 1A (Cadastro em massa)
 app.include_router(imports.router)
+app.include_router(credentials.router)
+app.include_router(marketplace_publish.router)
+app.include_router(erp_bling.router)
+app.include_router(auth.router)
 
 
-# -------------------------------------------------------------
-# Serviço de auditoria (lógica reutilizável)
-# -------------------------------------------------------------
 
-def perform_product_audit(product: Product, db: Session) -> Suggestion:
-    """Executa a auditoria de um produto via Gemini e persiste log e sugestão.
 
-    Função de serviço reutilizada tanto pelo endpoint individual quanto pelo
-    de lote — evita chamar handlers de rota diretamente. Comita a transação.
-    """
-    input_payload = {
-        "title": product.title,
-        "description": product.description,
-        "images": product.images or [],
-        "category": product.category,
-        "price": product.price,
-        "marketplace": product.marketplace,
-    }
 
-    audit_result, tokens_in, tokens_out, latency = audit_product_with_gemini(
-        title=product.title,
-        description=product.description,
-        images=product.images or [],
-        category=product.category or "",
-        price=product.price or 0.0,
-        marketplace=product.marketplace,
-    )
-
-    output_payload = audit_result.model_dump()
-
-    # 1. Salva log de Auditoria
-    db_log = AuditLog(
-        product_id=product.id,
-        input_payload=input_payload,
-        output_payload=output_payload,
-        model_used=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
-        tokens_input=tokens_in,
-        tokens_output=tokens_out,
-        token_cost_usd=0.0,  # Tier gratuito do Google AI Studio
-        latency_seconds=latency,
-    )
-    db.add(db_log)
-
-    # 2. Remove sugestão anterior (se houver) e cria a nova
-    existing_suggestion = db.query(Suggestion).filter(Suggestion.product_id == product.id).first()
-    if existing_suggestion:
-        db.delete(existing_suggestion)
-
-    db_suggestion = Suggestion(
-        product_id=product.id,
-        suggested_title=audit_result.suggested_title,
-        suggested_description=audit_result.suggested_description,
-        missing_attributes=output_payload.get("missing_attributes", []),
-        image_issues=output_payload.get("image_issues", []),
-        seo_score=audit_result.seo_score,
-        status=SuggestionStatus.PENDING.value,
-    )
-    db.add(db_suggestion)
-
-    # 3. Atualiza o status do produto
-    product.status = ProductStatus.AUDITED.value
-
-    db.commit()
-    db.refresh(db_suggestion)
-    return db_suggestion
 
 # -------------------------------------------------------------
 # Endpoints de Produtos
 # -------------------------------------------------------------
 
 @app.get("/products", response_model=List[ProductResponse])
-def list_products(db: Session = Depends(get_db)):
+def list_products(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Lista todos os produtos cadastrados."""
     return db.query(Product).order_by(Product.id.desc()).all()
 
 @app.post("/products", response_model=ProductResponse)
-def create_product(product: ProductCreate, db: Session = Depends(get_db)):
+def create_product(product: ProductCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Cria um novo produto manualmente."""
     db_product = Product(
         title=product.title,
@@ -149,7 +94,7 @@ def create_product(product: ProductCreate, db: Session = Depends(get_db)):
     return db_product
 
 @app.post("/products/import-test-listings")
-def import_test_listings(db: Session = Depends(get_db)):
+def import_test_listings(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Importa os anúncios do arquivo test_listings.json na raiz do projeto."""
     project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
     test_file_path = os.path.join(project_root, "test_listings.json")
@@ -199,7 +144,7 @@ def import_test_listings(db: Session = Depends(get_db)):
 # -------------------------------------------------------------
 
 @app.post("/products/{product_id}/audit", response_model=SuggestionResponse)
-def audit_product(product_id: int, db: Session = Depends(get_db)):
+def audit_product(product_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """
     Aciona o Agente de IA para auditar um produto específico.
     Invoca o Gemini com structured outputs, calcula tokens e salva sugestões e logs.
@@ -223,7 +168,7 @@ def audit_product(product_id: int, db: Session = Depends(get_db)):
         )
 
 @app.post("/products/audit-all")
-def audit_all_pending(db: Session = Depends(get_db)):
+def audit_all_pending(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Audita todos os produtos com status 'pending'."""
     pending_products = db.query(Product).filter(
         Product.status == ProductStatus.PENDING.value
@@ -254,12 +199,12 @@ def audit_all_pending(db: Session = Depends(get_db)):
 # -------------------------------------------------------------
 
 @app.get("/products/{product_id}/suggestions", response_model=List[SuggestionResponse])
-def get_product_suggestions(product_id: int, db: Session = Depends(get_db)):
+def get_product_suggestions(product_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Obtém o histórico de sugestões de um produto."""
     return db.query(Suggestion).filter(Suggestion.product_id == product_id).all()
 
 @app.post("/suggestions/{suggestion_id}/approve", response_model=SuggestionResponse)
-def approve_suggestion(suggestion_id: int, db: Session = Depends(get_db)):
+def approve_suggestion(suggestion_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """
     Aprova a sugestão gerada pela IA.
     Aplica as melhorias (título e descrição) no produto original e atualiza o status do produto.
@@ -286,7 +231,7 @@ def approve_suggestion(suggestion_id: int, db: Session = Depends(get_db)):
     return suggestion
 
 @app.post("/suggestions/{suggestion_id}/reject", response_model=SuggestionResponse)
-def reject_suggestion(suggestion_id: int, db: Session = Depends(get_db)):
+def reject_suggestion(suggestion_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Rejeita a sugestão gerada pela IA."""
     suggestion = db.query(Suggestion).filter(Suggestion.id == suggestion_id).first()
     if not suggestion:
@@ -312,6 +257,6 @@ def health_check():
     return {"status": "ok"}
 
 @app.get("/logs", response_model=List[AuditLogResponse])
-def list_logs(db: Session = Depends(get_db)):
+def list_logs(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Lista todos os logs de auditoria para análise de tokens, custo e latência."""
     return db.query(AuditLog).order_by(AuditLog.created_at.desc()).all()

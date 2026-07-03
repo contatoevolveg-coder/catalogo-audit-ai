@@ -20,6 +20,7 @@ class ProductStatus(str, Enum):
     PENDING = "pending"
     AUDITED = "audited"
     OPTIMIZED = "optimized"
+    PUBLISHED = "published"
 
 
 class SuggestionStatus(str, Enum):
@@ -63,4 +64,16 @@ PROHIBITED_PROMOTIONAL_TERMS = [
     "oferta",
     "queima"
 ]
+
+ALLOWED_CREDENTIAL_SCOPES = [
+    "read_products",
+    "write_price",
+    "write_listing",
+    "read_orders"
+]
+
+# Configuração padrão do tipo de anúncio do Mercado Livre (pode necessitar ajuste por categoria)
+DEFAULT_ML_LISTING_TYPE = "gold_special"
+
+
 

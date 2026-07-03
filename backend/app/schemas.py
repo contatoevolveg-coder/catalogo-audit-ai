@@ -1,5 +1,5 @@
-from pydantic import BaseModel, Field, ConfigDict
-from typing import List, Optional, Dict, Any
+from pydantic import BaseModel, Field, ConfigDict, field_validator
+from typing import List, Optional, Dict, Any, Literal
 from datetime import datetime
 
 from backend.app.constants import Marketplace, Severity
@@ -46,6 +46,8 @@ class ProductResponse(ProductBase):
 
     id: int
     status: str
+    external_listing_id: Optional[str] = None
+    erp_sku: Optional[str] = None
     created_at: datetime
 
 class SuggestionResponse(BaseModel):
@@ -128,3 +130,141 @@ class ConfirmImportResponse(BaseModel):
     imported: int = Field(description="Número de produtos cadastrados com sucesso")
     skipped_invalid: int = Field(description="Número de linhas puladas por conterem erros")
     created_product_ids: List[int] = Field(description="Lista com os IDs dos produtos criados")
+    audited: int = 0
+    audit_skipped: int = 0
+    audit_errors: List[Dict[str, Any]] = []
+
+# -------------------------------------------------------------
+# Esquemas para a Fase 3 (Cofre de Credenciais)
+# -------------------------------------------------------------
+from backend.app.constants import ALLOWED_CREDENTIAL_SCOPES
+
+class CredentialCreate(BaseModel):
+    provider: str = Field(description="Nome do provedor, ex.: 'mercado_livre', 'shopee', 'bling'")
+    provider_type: Literal["marketplace", "erp"] = Field(description="Tipo do provedor: marketplace ou erp")
+    label: str = Field(min_length=1, description="Nome amigável da credencial")
+    secret_payload: Dict[str, Any] = Field(description="Payload do segredo bruto (dicionário de chaves/tokens)")
+    scopes: List[str] = Field(description="Escopos associados à credencial")
+
+    @field_validator("scopes")
+    @classmethod
+    def validate_scopes(cls, v: List[str]) -> List[str]:
+        for scope in v:
+            if scope not in ALLOWED_CREDENTIAL_SCOPES:
+                raise ValueError(f"Escopo '{scope}' não é permitido. Escopos permitidos: {ALLOWED_CREDENTIAL_SCOPES}")
+        return v
+
+class CredentialUpdate(BaseModel):
+    label: Optional[str] = Field(None, min_length=1, description="Nome amigável da credencial")
+    scopes: Optional[List[str]] = Field(None, description="Escopos associados à credencial")
+    secret_payload: Optional[Dict[str, Any]] = Field(None, description="Payload do segredo bruto (opcional para rotação)")
+
+    @field_validator("scopes")
+    @classmethod
+    def validate_scopes(cls, v: Optional[List[str]]) -> Optional[List[str]]:
+        if v is not None:
+            for scope in v:
+                if scope not in ALLOWED_CREDENTIAL_SCOPES:
+                    raise ValueError(f"Escopo '{scope}' não é permitido. Escopos permitidos: {ALLOWED_CREDENTIAL_SCOPES}")
+        return v
+
+class CredentialResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    provider: str
+    provider_type: str
+    label: str
+    masked_preview: str
+    scopes: List[str]
+    status: str
+    status_detail: Optional[str] = None
+    last_checked_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+
+class CredentialTestResponse(BaseModel):
+    status: str
+    status_detail: Optional[str] = None
+    last_checked_at: Optional[datetime] = None
+
+
+# -------------------------------------------------------------
+# Esquemas para a Fase 4 (Publicação de Anúncios no Mercado Livre)
+# -------------------------------------------------------------
+
+class CategorySuggestion(BaseModel):
+    category_id: str = Field(description="ID da categoria sugerida (ex.: 'MLB1234')")
+    category_name: str = Field(description="Nome amigável da categoria (ex.: 'Calçados')")
+
+class PublishRequest(BaseModel):
+    credential_id: int = Field(description="ID da credencial do cofre (Fase 3) para publicação")
+    category_id: str = Field(min_length=1, description="ID da categoria no Mercado Livre a publicar")
+
+class MarketplacePublicationResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    product_id: int
+    credential_id: int
+    marketplace_item_id: Optional[str] = None
+    category_id: str
+    status: str
+    error_detail: Optional[str] = None
+    created_at: datetime
+
+
+# -------------------------------------------------------------
+# Esquemas para a Fase 5 (Sincronização de Estoque com o Bling)
+# -------------------------------------------------------------
+
+class ErpLinkRequest(BaseModel):
+    erp_sku: str = Field(min_length=1, description="Código SKU do produto cadastrado no Bling ERP")
+
+class ErpSyncLogResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    product_id: int
+    credential_id: int
+    erp_sku: str
+    sync_type: str
+    status: str
+    previous_quantity: Optional[int] = None
+    new_quantity: Optional[int] = None
+    error_detail: Optional[str] = None
+    created_at: datetime
+
+class BulkSyncResponse(BaseModel):
+    synced: int = Field(description="Quantidade de produtos sincronizados com sucesso")
+    not_found: int = Field(description="Quantidade de produtos não encontrados no Bling")
+    errors: List[Dict[str, Any]] = Field(description="Erros estruturados que ocorreram no lote")
+
+class SyncStockRequest(BaseModel):
+    credential_id: int = Field(description="ID da credencial do Bling no cofre")
+
+class BulkSyncRequest(BaseModel):
+    credential_id: int = Field(description="ID da credencial do Bling no cofre")
+    max_sync: int = Field(20, ge=1, le=100, description="Limite máximo de produtos a sincronizar no lote")
+
+class UserRegisterRequest(BaseModel):
+    username: str = Field(min_length=3, max_length=150, description="Nome de usuário")
+    password: str = Field(min_length=6, max_length=128, description="Senha de acesso")
+
+class UserResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    username: str
+    role: str
+    created_at: datetime
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+
+
+
+
+

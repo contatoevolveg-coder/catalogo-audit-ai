@@ -41,3 +41,32 @@ def is_mock_mode() -> bool:
 def is_api_key_configured() -> bool:
     """Retorna True se houver uma chave de API real configurada."""
     return GEMINI_API_KEY not in _PLACEHOLDER_KEYS and not is_mock_mode()
+
+
+# Configurações de segurança para credenciais e área administrativa
+CREDENTIAL_ENCRYPTION_KEY = os.getenv("CREDENTIAL_ENCRYPTION_KEY", "")
+ADMIN_API_KEY = os.getenv("ADMIN_API_KEY", "")
+
+JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "")
+JWT_EXPIRE_HOURS = int(os.getenv("JWT_EXPIRE_HOURS", "8"))
+
+# Configurações de Rate Limiting para Login / Registro
+LOGIN_MAX_ATTEMPTS = int(os.getenv("LOGIN_MAX_ATTEMPTS", "5"))
+LOGIN_LOCKOUT_MINUTES = int(os.getenv("LOGIN_LOCKOUT_MINUTES", "15"))
+
+
+def is_admin_key_configured() -> bool:
+    """Retorna True se a chave de administrador (ADMIN_API_KEY) estiver configurada."""
+    return bool(ADMIN_API_KEY.strip())
+
+
+def is_encryption_configured() -> bool:
+    """Retorna True se a chave de criptografia de credenciais estiver configurada."""
+    return bool(CREDENTIAL_ENCRYPTION_KEY.strip())
+
+
+def is_jwt_configured() -> bool:
+    """Retorna True se a chave secreta do JWT (JWT_SECRET_KEY) estiver configurada."""
+    return bool(JWT_SECRET_KEY.strip())
+
+

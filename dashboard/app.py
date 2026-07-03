@@ -3,6 +3,8 @@ import streamlit as st
 import requests
 import pandas as pd
 from datetime import datetime
+from dashboard.tabs import imports_tab, credentials_tab, marketplace_publish_tab, erp_sync_tab
+
 
 # Configuração da página Streamlit
 st.set_page_config(
@@ -28,6 +30,64 @@ def _resolve_api_url() -> str:
     return "http://localhost:8000"
 
 API_URL = _resolve_api_url()
+
+# -------------------------------------------------------------
+# Mecanismo de Autenticação JWT (Fase 7)
+# -------------------------------------------------------------
+token = st.session_state.get("access_token")
+current_user = None
+
+if token:
+    try:
+        r_me = requests.get(f"{API_URL}/auth/me", headers={"Authorization": f"Bearer {token}"})
+        if r_me.status_code == 200:
+            current_user = r_me.json()
+        else:
+            st.session_state.pop("access_token", None)
+            st.warning("Sessão expirada. Faça login novamente.")
+            st.rerun()
+    except Exception:
+        st.warning("Não foi possível validar o token de acesso com o backend.")
+
+if not current_user:
+    st.markdown("""
+    <div style="max-width: 400px; margin: 80px auto; padding: 2rem; background-color: #1a1d27; border-radius: 12px; border: 1px solid #2d3142; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+        <h2 style="text-align: center; color: #818cf8; margin-bottom: 1.5rem;">🤖 Catalog Audit AI</h2>
+        <h4 style="text-align: center; color: #e2e8f0; margin-bottom: 2rem; font-weight: 300;">Identificação Obrigatória</h4>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    with st.container():
+        col_space1, col_login, col_space2 = st.columns([1, 2, 1])
+        with col_login:
+            with st.form("login_form"):
+                username = st.text_input("Usuário", placeholder="Seu nome de usuário")
+                password = st.text_input("Senha", type="password", placeholder="Sua senha secreta")
+                btn_login = st.form_submit_button("🔓 Entrar")
+                
+                if btn_login:
+                    if not username.strip() or not password.strip():
+                        st.error("Nome de usuário e senha são obrigatórios.")
+                    else:
+                        try:
+                            # OAuth2 especifica envio via Form-data / Form-url-encoded
+                            res = requests.post(
+                                f"{API_URL}/auth/login",
+                                data={"username": username.strip(), "password": password.strip()}
+                            )
+                            if res.status_code == 200:
+                                st.session_state["access_token"] = res.json()["access_token"]
+                                st.success("Autenticado com sucesso!")
+                                st.rerun()
+                            else:
+                                st.error("Usuário ou senha incorretos.")
+                        except Exception as e:
+                            st.error(f"Erro de conexão com o backend: {e}")
+            st.stop()
+
+# Uma vez autenticado, gera o header global para as chamadas e abas
+admin_headers = {"Authorization": f"Bearer {token}"}
+
 
 # CSS customizado para visual moderno, escuro e premium
 st.markdown("""
@@ -82,6 +142,13 @@ st.markdown("""
     .status-pending { background-color: #3b2c0b; color: #f59e0b; border: 1px solid #d97706; }
     .status-audited { background-color: #1e293b; color: #38bdf8; border: 1px solid #0284c7; }
     .status-optimized { background-color: #064e3b; color: #34d399; border: 1px solid #059669; }
+    
+    /* Status das Credenciais (Badges) */
+    .status-valid { background-color: #064e3b; color: #34d399; border: 1px solid #059669; }
+    .status-expired { background-color: #4c0519; color: #fda4af; border: 1px solid #e11d48; }
+    .status-error { background-color: #450a0a; color: #fca5a5; border: 1px solid #dc2626; }
+    .status-untested { background-color: #1e293b; color: #94a3b8; border: 1px solid #475569; }
+
     
     /* Cards Modernos */
     .card {
@@ -194,7 +261,7 @@ with st.sidebar:
     st.markdown("### 🔌 Conexão do Backend")
     api_status = False
     try:
-        r = requests.get(f"{API_URL}/products", timeout=2)
+        r = requests.get(f"{API_URL}/health", timeout=2)
         if r.status_code == 200:
             api_status = True
             st.success("Conectado ao FastAPI Backend!")
@@ -204,10 +271,18 @@ with st.sidebar:
         st.error("Não foi possível conectar ao FastAPI. Certifique-se de que o backend está rodando no endereço correto.")
 
     st.markdown("---")
+    st.markdown("### 👤 Usuário Autenticado")
+    st.write(f"Conectado como: **{current_user['username']}**")
+    if st.button("🚪 Sair", type="secondary", use_container_width=True):
+        st.session_state.pop("access_token", None)
+        st.rerun()
+
+
+    st.markdown("---")
     st.markdown("### 🛠️ Ações do Banco de Dados")
     if st.button("📥 Importar Anúncios de Teste", disabled=not api_status):
         try:
-            r = requests.post(f"{API_URL}/products/import-test-listings")
+            r = requests.post(f"{API_URL}/products/import-test-listings", headers=admin_headers)
             if r.status_code == 200:
                 msg = r.json().get("message", "Sucesso ao importar.")
                 st.success(msg)
@@ -220,7 +295,7 @@ with st.sidebar:
     if st.button("⚡ Auditar Todos em Lote", type="primary", disabled=not api_status):
         with st.spinner("Auditando todos os pendentes via Gemini..."):
             try:
-                r = requests.post(f"{API_URL}/products/audit-all")
+                r = requests.post(f"{API_URL}/products/audit-all", headers=admin_headers)
                 if r.status_code == 200:
                     data = r.json()
                     st.success(data.get("message", "Sucesso!"))
@@ -239,13 +314,20 @@ if not api_status:
 
 # Busca produtos do banco
 try:
-    products = requests.get(f"{API_URL}/products").json()
+    products = requests.get(f"{API_URL}/products", headers=admin_headers).json()
 except Exception as e:
     st.error(f"Erro ao buscar produtos: {e}")
     st.stop()
 
 # Cria abas principais no dashboard
-tab_catalogo, tab_logs = st.tabs(["📋 Catálogo & Auditoria", "📊 Logs de Custos & Tokens"])
+tab_catalogo, tab_cadastro, tab_credentials, tab_publish, tab_sync, tab_logs = st.tabs([
+    "📋 Catálogo & Auditoria", 
+    "📥 Cadastro em Massa", 
+    "🔑 Credenciais", 
+    "🛒 Publicação ML", 
+    "🔗 Sincronização Bling", 
+    "📊 Logs de Custos & Tokens"
+])
 
 # -------------------------------------------------------------
 # ABA 1: Catálogo & Auditoria
@@ -275,7 +357,7 @@ with tab_catalogo:
                         "price": price,
                         "marketplace": mkt
                     }
-                    r = requests.post(f"{API_URL}/products", json=payload)
+                    r = requests.post(f"{API_URL}/products", json=payload, headers=admin_headers)
                     if r.status_code == 200:
                         st.success("Anúncio cadastrado com sucesso!")
                         st.rerun()
@@ -364,7 +446,7 @@ with tab_catalogo:
                     if st.button(audit_label, type="primary", use_container_width=True):
                         with st.spinner("O Agente Gemini está auditando o anúncio..."):
                             try:
-                                r = requests.post(f"{API_URL}/products/{product['id']}/audit")
+                                r = requests.post(f"{API_URL}/products/{product['id']}/audit", headers=admin_headers)
                                 if r.status_code == 200:
                                     st.success("Auditoria realizada com sucesso!")
                                     st.rerun()
@@ -377,7 +459,7 @@ with tab_catalogo:
                 if product["status"] in ["audited", "optimized"]:
                     # Busca as sugestões geradas
                     try:
-                        suggestions_res = requests.get(f"{API_URL}/products/{product['id']}/suggestions").json()
+                        suggestions_res = requests.get(f"{API_URL}/products/{product['id']}/suggestions", headers=admin_headers).json()
                         suggestion = suggestions_res[-1] if suggestions_res else None
                     except Exception as e:
                         st.error(f"Erro ao carregar sugestões: {e}")
@@ -471,7 +553,7 @@ with tab_catalogo:
                             col_approve, col_reject, _ = st.columns([1, 1, 2])
                             with col_approve:
                                 if st.button("✅ Aprovar Alterações", type="primary", use_container_width=True):
-                                    r = requests.post(f"{API_URL}/suggestions/{suggestion['id']}/approve")
+                                    r = requests.post(f"{API_URL}/suggestions/{suggestion['id']}/approve", headers=admin_headers)
                                     if r.status_code == 200:
                                         st.success("Sugestão APROVADA e aplicada no anúncio original!")
                                         st.rerun()
@@ -479,7 +561,7 @@ with tab_catalogo:
                                         st.error("Erro ao aprovar.")
                             with col_reject:
                                 if st.button("❌ Rejeitar Alterações", use_container_width=True):
-                                    r = requests.post(f"{API_URL}/suggestions/{suggestion['id']}/reject")
+                                    r = requests.post(f"{API_URL}/suggestions/{suggestion['id']}/reject", headers=admin_headers)
                                     if r.status_code == 200:
                                         st.warning("Sugestão REJEITADA.")
                                         st.rerun()
@@ -493,6 +575,31 @@ with tab_catalogo:
                 st.info("Selecione um produto da lista para ver os detalhes da auditoria.")
 
 # -------------------------------------------------------------
+# ABA: Cadastro em Massa
+# -------------------------------------------------------------
+with tab_cadastro:
+    imports_tab.render(API_URL, admin_headers)
+
+# -------------------------------------------------------------
+# ABA: Credenciais
+# -------------------------------------------------------------
+with tab_credentials:
+    credentials_tab.render(API_URL, admin_headers)
+
+# -------------------------------------------------------------
+# ABA: Publicação Mercado Livre
+# -------------------------------------------------------------
+with tab_publish:
+    marketplace_publish_tab.render(API_URL, admin_headers)
+
+# -------------------------------------------------------------
+# ABA: Sincronização Bling
+# -------------------------------------------------------------
+with tab_sync:
+    erp_sync_tab.render(API_URL, admin_headers)
+
+
+# -------------------------------------------------------------
 # ABA 2: Logs de Custos & Tokens
 # -------------------------------------------------------------
 with tab_logs:
@@ -503,7 +610,7 @@ with tab_logs:
     """)
     
     try:
-        logs_res = requests.get(f"{API_URL}/logs").json()
+        logs_res = requests.get(f"{API_URL}/logs", headers=admin_headers).json()
     except Exception as e:
         st.error(f"Erro ao carregar logs: {e}")
         logs_res = []
