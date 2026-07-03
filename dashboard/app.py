@@ -3,7 +3,9 @@ import streamlit as st
 import requests
 import pandas as pd
 from datetime import datetime
-from dashboard.tabs import imports_tab, credentials_tab, marketplace_publish_tab, erp_sync_tab
+# No Streamlit Cloud, a pasta do script (dashboard/) é que entra no sys.path —
+# não a raiz do repo. Por isso importamos "tabs" direto, sem o prefixo "dashboard.".
+from tabs import imports_tab, credentials_tab, marketplace_publish_tab, erp_sync_tab
 
 
 # Configuração da página Streamlit
