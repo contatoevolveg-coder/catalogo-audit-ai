@@ -7,6 +7,7 @@ from typing import List
 
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from backend.app.config import CORS_ORIGINS
@@ -58,6 +59,12 @@ app.include_router(credentials.router)
 app.include_router(marketplace_publish.router)
 app.include_router(erp_bling.router)
 app.include_router(auth.router)
+
+
+@app.get("/", include_in_schema=False)
+def root():
+    """Redireciona a raiz da API para a documentação interativa (Swagger)."""
+    return RedirectResponse(url="/docs")
 
 
 
