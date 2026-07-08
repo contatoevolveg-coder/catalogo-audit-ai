@@ -88,7 +88,18 @@ def handle_callback(provider: str, code: str, state: str, label: str, db: Sessio
         provider_type = "marketplace"
         
     if not success:
-        raise HTTPException(status_code=400, detail=f"Erro ao obter token: {body.get('error', 'Desconhecido')}")
+        error_code = body.get("error", "Desconhecido")
+        error_msg = body.get("message") or body.get("error_description") or ""
+        redirect_hint = ""
+        if provider == "mercado_livre" and error_code == "invalid_request":
+            redirect_hint = (
+                f" (verifique se a Redirect URI cadastrada no app do Mercado Livre é EXATAMENTE "
+                f"'{redirect_uri}', sem barra final nem diferença de http/https)"
+            )
+        raise HTTPException(
+            status_code=400,
+            detail=f"Erro ao obter token: {error_code}{' - ' + error_msg if error_msg else ''}{redirect_hint}"
+        )
         
     access_token = body.get("access_token")
     refresh_token = body.get("refresh_token")
