@@ -64,6 +64,17 @@ class SuggestionResponse(BaseModel):
     created_at: datetime
     reviewed_at: Optional[datetime] = None
 
+class ApproveSuggestionRequest(BaseModel):
+    final_title: Optional[str] = Field(default=None, description="Título final editado pelo humano (opcional)")
+    final_description: Optional[str] = Field(default=None, description="Descrição final editada pelo humano (opcional)")
+
+class FeedbackStatsResponse(BaseModel):
+    total_approved: int
+    total_edited: int
+    edit_percentage: float
+    avg_edit_distance: float
+    most_edited_field: Optional[str] = None
+
 class AuditLogResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -179,6 +190,7 @@ class CredentialResponse(BaseModel):
     scopes: List[str]
     status: str
     status_detail: Optional[str] = None
+    token_expires_at: Optional[datetime] = None
     last_checked_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
@@ -264,7 +276,121 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
 
 
+# -------------------------------------------------------------
+# Esquemas para a Fase 9 (Gestão de Perguntas Pré-venda)
+# -------------------------------------------------------------
+
+class GeminiQuestionDraftResponse(BaseModel):
+    suggested_answer: str = Field(description="A sugestão de resposta para a pergunta pré-venda do Mercado Livre.")
+    needs_human_review: bool = Field(default=False, description="Indica se a pergunta exige revisão humana obrigatória.")
+    review_reason: Optional[str] = Field(default=None, description="Motivo pelo qual a revisão humana foi necessária.")
+
+class SyncQuestionsRequest(BaseModel):
+    credential_id: int = Field(description="ID da credencial do Mercado Livre no cofre")
+    max_fetch: int = Field(20, ge=1, le=100, description="Quantidade máxima de perguntas a buscar")
+
+class SendAnswerRequest(BaseModel):
+    credential_id: int = Field(description="ID da credencial do Mercado Livre no cofre")
+    final_text: Optional[str] = Field(default=None, description="Texto da resposta final. Se omitido, usa a sugestão da IA")
+
+class CustomerQuestionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    credential_id: int
+    ml_question_id: str
+    item_id: str
+    matched_product_id: Optional[int] = None
+    question_text: str
+    asker_nickname: Optional[str] = None
+    status: str
+    ai_suggested_answer: Optional[str] = None
+    final_answer_text: Optional[str] = None
+    needs_human_review: bool
+    review_reason: Optional[str] = None
+    tokens_input: Optional[int] = None
+    tokens_output: Optional[int] = None
+    latency_seconds: Optional[float] = None
+    ml_created_at: Optional[datetime] = None
+    fetched_at: datetime
+    answered_at: Optional[datetime] = None
 
 
+# -------------------------------------------------------------
+# Esquemas para a Fase 10 (OAuth2)
+# -------------------------------------------------------------
+
+class AuthorizationUrlResponse(BaseModel):
+    authorization_url: str = Field(description="URL para redirecionar o usuário para conceder acesso")
+
+class OAuthCallbackRequest(BaseModel):
+    code: str = Field(description="Authorization code retornado pelo provedor")
+    state: str = Field(description="State token gerado na inicialização")
+    label: str = Field(description="Nome amigável para identificar a credencial criada")
+    shop_id: Optional[int] = Field(default=None, description="ID da loja (obrigatório para Shopee)")
 
 
+# -------------------------------------------------------------
+# Esquemas para o Scheduler Status
+# -------------------------------------------------------------
+
+class SchedulerRunResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    job: str
+    start_time: datetime
+    end_time: Optional[datetime] = None
+    items_processed: int
+    errors: Optional[str] = None
+
+# -------------------------------------------------------------
+# Esquemas para Alertas do Sistema
+# -------------------------------------------------------------
+
+class AlertResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    type: str
+    severity: str
+    product_id: Optional[int] = None
+    credential_id: Optional[int] = None
+    message: str
+    is_read: bool
+    created_at: datetime
+
+
+# -------------------------------------------------------------
+# Esquemas para a Gestão de Vendas (Orders)
+# -------------------------------------------------------------
+
+class OrderItemResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    order_id: int
+    product_id: Optional[int] = None
+    sku: Optional[str] = None
+    title: str
+    quantity: int
+    unit_price: float
+
+class OrderResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    marketplace: str
+    external_order_id: str
+    credential_id: int
+    buyer_nickname: Optional[str] = None
+    total_amount: float
+    status: str
+    shipping_status: Optional[str] = None
+    stock_deducted: bool
+    created_at: datetime
+    items: List[OrderItemResponse] = []
+
+class OrderSyncResponse(BaseModel):
+    synced: int = Field(description="Quantidade de pedidos sincronizados")
+    stock_deductions: int = Field(description="Quantidade de abatimentos de estoque locais realizados")

@@ -5,7 +5,7 @@ import pandas as pd
 from datetime import datetime
 # No Streamlit Cloud, a pasta do script (dashboard/) é que entra no sys.path —
 # não a raiz do repo. Por isso importamos "tabs" direto, sem o prefixo "dashboard.".
-from tabs import imports_tab, credentials_tab, marketplace_publish_tab, erp_sync_tab
+from tabs import imports_tab, credentials_tab, marketplace_publish_tab, erp_sync_tab, alerts_tab, orders_tab
 
 
 # Configuração da página Streamlit
@@ -321,14 +321,27 @@ except Exception as e:
     st.error(f"Erro ao buscar produtos: {e}")
     st.stop()
 
+# Busca contagem de alertas não lidos para o badge
+unread_alerts_count = 0
+try:
+    r_alerts = requests.get(f"{API_URL}/alerts?is_read=false", headers=admin_headers)
+    if r_alerts.status_code == 200:
+        unread_alerts_count = len(r_alerts.json())
+except Exception:
+    pass
+
+alert_tab_label = f"🔔 Alertas ({unread_alerts_count})" if unread_alerts_count > 0 else "🔔 Alertas"
+
 # Cria abas principais no dashboard
-tab_catalogo, tab_cadastro, tab_credentials, tab_publish, tab_sync, tab_logs = st.tabs([
+tab_catalogo, tab_cadastro, tab_credentials, tab_publish, tab_sync, tab_orders, tab_logs, tab_alerts = st.tabs([
     "📋 Catálogo & Auditoria", 
     "📥 Cadastro em Massa", 
     "🔑 Credenciais", 
     "🛒 Publicação ML", 
     "🔗 Sincronização Bling", 
-    "📊 Logs de Custos & Tokens"
+    "📦 Pedidos",
+    "📊 Logs de Custos & Tokens",
+    alert_tab_label
 ])
 
 # -------------------------------------------------------------
@@ -552,23 +565,38 @@ with tab_catalogo:
                         st.markdown(f"**Status da Sugestão Atual:** `{suggestion['status'].upper()}`")
                         
                         if suggestion["status"] == "pending":
-                            col_approve, col_reject, _ = st.columns([1, 1, 2])
-                            with col_approve:
-                                if st.button("✅ Aprovar Alterações", type="primary", use_container_width=True):
-                                    r = requests.post(f"{API_URL}/suggestions/{suggestion['id']}/approve", headers=admin_headers)
+                            st.markdown("#### ✏️ Aprovar com Edições")
+                            st.markdown("Caso queira fazer algum ajuste final na sugestão da IA antes de aplicar ao anúncio, edite os campos abaixo:")
+                            
+                            with st.form(key=f"form_approve_{suggestion['id']}"):
+                                final_title = st.text_input("Título Final", value=suggestion['suggested_title'])
+                                final_description = st.text_area("Descrição Final", value=suggestion['suggested_description'], height=200)
+                                
+                                col_btn_1, col_btn_2 = st.columns(2)
+                                with col_btn_1:
+                                    submit_approve = st.form_submit_button("✅ Aprovar (com estas edições)", type="primary", use_container_width=True)
+                                
+                                if submit_approve:
+                                    payload = {
+                                        "final_title": final_title,
+                                        "final_description": final_description
+                                    }
+                                    r = requests.post(f"{API_URL}/suggestions/{suggestion['id']}/approve", json=payload, headers=admin_headers)
                                     if r.status_code == 200:
                                         st.success("Sugestão APROVADA e aplicada no anúncio original!")
                                         st.rerun()
                                     else:
-                                        st.error("Erro ao aprovar.")
-                            with col_reject:
-                                if st.button("❌ Rejeitar Alterações", use_container_width=True):
-                                    r = requests.post(f"{API_URL}/suggestions/{suggestion['id']}/reject", headers=admin_headers)
-                                    if r.status_code == 200:
-                                        st.warning("Sugestão REJEITADA.")
-                                        st.rerun()
-                                    else:
-                                        st.error("Erro ao rejeitar.")
+                                        st.error(f"Erro ao aprovar: {r.text}")
+                                        
+                            # O botão de rejeitar fica fora do form principal para não causar conflitos de submit
+                            if st.button("❌ Rejeitar Alterações", use_container_width=True):
+                                r = requests.post(f"{API_URL}/suggestions/{suggestion['id']}/reject", headers=admin_headers)
+                                if r.status_code == 200:
+                                    st.warning("Sugestão REJEITADA.")
+                                    st.rerun()
+                                else:
+                                    st.error("Erro ao rejeitar.")
+
                         elif suggestion["status"] == "approved":
                             st.success(f"Alterações aprovadas e aplicadas em: {suggestion.get('reviewed_at', '')}")
                         elif suggestion["status"] == "rejected":
@@ -599,6 +627,13 @@ with tab_publish:
 # -------------------------------------------------------------
 with tab_sync:
     erp_sync_tab.render(API_URL, admin_headers)
+
+
+# -------------------------------------------------------------
+# ABA: Pedidos
+# -------------------------------------------------------------
+with tab_orders:
+    orders_tab.render(API_URL, admin_headers)
 
 
 # -------------------------------------------------------------
@@ -657,3 +692,9 @@ with tab_logs:
             
         # Explicação de custo
         st.info("ℹ️ Os custos de tokens são exibidos como $0.0000 pois estamos utilizando o Tier Gratuito (Free Tier) do Google AI Studio para testes locais.")
+
+# -------------------------------------------------------------
+# ABA 3: Alertas do Sistema
+# -------------------------------------------------------------
+with tab_alerts:
+    alerts_tab.render(API_URL, admin_headers)

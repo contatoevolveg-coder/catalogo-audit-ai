@@ -8,7 +8,7 @@ from backend.app.schemas import (
     ErpSyncLogResponse, BulkSyncResponse, ProductResponse
 )
 from backend.app.services.erp_sync_service import sync_product_stock, sync_all_linked_products
-from backend.app.security.dependencies import get_current_user
+from backend.app.security.dependencies import get_current_user, get_current_tenant
 
 router = APIRouter(
     prefix="/erp-integrations/bling",
@@ -23,10 +23,10 @@ def link_erp_sku(
     product_id: int,
     data: ErpLinkRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    tenant_id: int = Depends(get_current_tenant)
 ):
     """Vincula ou atualiza o SKU (código) do Bling ERP associado a um produto local."""
-    product = db.query(Product).filter(Product.id == product_id).first()
+    product = db.query(Product).filter(Product.id == product_id, Product.tenant_id == tenant_id).first()
     if not product:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -47,13 +47,14 @@ def sync_stock(
     product_id: int,
     data: SyncStockRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    tenant_id: int = Depends(get_current_tenant)
 ):
     """Sincroniza o saldo de estoque físico do produto a partir do Bling ERP (somente leitura)."""
     log_entry = sync_product_stock(
         product_id=product_id,
         credential_id=data.credential_id,
-        db=db
+        db=db,
+        tenant_id=tenant_id
     )
 
     if log_entry.status == "error":
@@ -77,12 +78,13 @@ def sync_stock(
 def sync_all(
     data: BulkSyncRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    tenant_id: int = Depends(get_current_tenant)
 ):
     """Executa a sincronização de estoque em lote para todos os produtos vinculados (com cap de lote)."""
     logs = sync_all_linked_products(
         credential_id=data.credential_id,
         db=db,
+        tenant_id=tenant_id,
         max_sync=data.max_sync
     )
 
@@ -115,10 +117,10 @@ def sync_all(
 def get_sync_history(
     product_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    tenant_id: int = Depends(get_current_tenant)
 ):
     """Retorna o histórico de tentativas de sincronização do produto (mais recente primeiro)."""
     return db.query(ErpSyncLog)\
-        .filter(ErpSyncLog.product_id == product_id)\
+        .filter(ErpSyncLog.product_id == product_id, ErpSyncLog.tenant_id == tenant_id)\
         .order_by(ErpSyncLog.created_at.desc())\
         .all()

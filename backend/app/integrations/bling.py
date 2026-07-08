@@ -1,6 +1,7 @@
 import time
 import httpx
 import logging
+import base64
 from typing import Tuple, Any, Optional
 
 logger = logging.getLogger(__name__)
@@ -116,3 +117,48 @@ def get_stock_quantity(access_token: str, produto_id: int) -> Tuple[str, Any]:
             return "error", {"message": f"Erro inesperado: {str(e)}"}
 
     return "error", {"message": "Limite de retentativas (429) excedido no Bling."}
+
+
+def build_authorization_url(client_id: str, state: str) -> str:
+    """Constrói a URL de autorização OAuth2 para o Bling."""
+    return f"https://www.bling.com.br/Api/v3/oauth/authorize?response_type=code&client_id={client_id}&state={state}"
+
+
+def _get_bling_token(client_id: str, client_secret: str, data: dict) -> Tuple[bool, dict]:
+    """Helper para obter tokens (seja por authorization_code ou refresh_token)."""
+    url = "https://www.bling.com.br/Api/v3/oauth/token"
+    
+    # Autenticação via Basic header no Bling
+    auth_str = f"{client_id}:{client_secret}"
+    b64_auth = base64.b64encode(auth_str.encode("utf-8")).decode("utf-8")
+    
+    headers = {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Accept": "1.0", # Bling exige 1.0 (ou json dependendo da doc, 1.0 no cabeçalho Accept é comum na doc deles, ou application/json)
+        "Authorization": f"Basic {b64_auth}"
+    }
+
+    try:
+        response = httpx.post(url, headers=headers, data=data, timeout=10.0)
+        body = response.json()
+        return (response.status_code == 200, body)
+    except Exception as e:
+        return (False, {"error": str(e)})
+
+
+def exchange_code_for_token(client_id: str, client_secret: str, code: str) -> Tuple[bool, dict]:
+    """Troca o authorization code por tokens no Bling."""
+    data = {
+        "grant_type": "authorization_code",
+        "code": code
+    }
+    return _get_bling_token(client_id, client_secret, data)
+
+
+def refresh_access_token(client_id: str, client_secret: str, refresh_token: str) -> Tuple[bool, dict]:
+    """Renova o access_token usando o refresh_token no Bling."""
+    data = {
+        "grant_type": "refresh_token",
+        "refresh_token": refresh_token
+    }
+    return _get_bling_token(client_id, client_secret, data)

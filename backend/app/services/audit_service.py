@@ -36,6 +36,7 @@ def perform_product_audit(product: Product, db: Session) -> Suggestion:
 
     # 1. Salva log de Auditoria
     db_log = AuditLog(
+        tenant_id=product.tenant_id,
         product_id=product.id,
         input_payload=input_payload,
         output_payload=output_payload,
@@ -53,6 +54,7 @@ def perform_product_audit(product: Product, db: Session) -> Suggestion:
         db.delete(existing_suggestion)
 
     db_suggestion = Suggestion(
+        tenant_id=product.tenant_id,
         product_id=product.id,
         suggested_title=audit_result.suggested_title,
         suggested_description=audit_result.suggested_description,

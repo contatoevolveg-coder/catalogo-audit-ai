@@ -8,19 +8,20 @@ from sqlalchemy.orm import Session
 from backend.app.database import Product, Credential, ErpSyncLog, ExternalCallLog
 from backend.app.security.crypto import decrypt_secret
 from backend.app.integrations import bling
+from backend.app.services.oauth_service import refresh_if_needed
 
 logger = logging.getLogger(__name__)
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
-def sync_product_stock(product_id: int, credential_id: int, db: Session) -> ErpSyncLog:
+def sync_product_stock(product_id: int, credential_id: int, db: Session, tenant_id: int) -> ErpSyncLog:
     """Sincroniza o saldo de estoque físico de um produto individual do Bling ERP para a base local.
 
     Esta operação é estritamente de leitura em relação à API do Bling.
     """
     # 1. Busca o produto
-    product = db.query(Product).filter(Product.id == product_id).first()
+    product = db.query(Product).filter(Product.id == product_id, Product.tenant_id == tenant_id).first()
     if not product:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -36,20 +37,28 @@ def sync_product_stock(product_id: int, credential_id: int, db: Session) -> ErpS
         )
 
     # 3. Busca a Credential
-    credential = db.query(Credential).filter(Credential.id == credential_id).first()
+    credential = db.query(Credential).filter(Credential.id == credential_id, Credential.tenant_id == tenant_id).first()
     if not credential:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Credencial não encontrada."
         )
 
-    if credential.provider != "bling" or credential.status != "valid":
+    if credential.provider != "bling" or credential.status not in ["valid", "expired"]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Credencial não está válida. Rode o teste de conectividade ou rotacione o token."
+            detail="Credencial não está válida."
         )
 
-    # 4. Decripta o secret em memória
+    # 4. Refresh token (OAuth2 Fase 10)
+    credential = refresh_if_needed(credential, db)
+    if credential.status != "valid":
+         raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Falha na renovação da credencial: {credential.status_detail}"
+        )
+
+    # 5. Decripta o secret em memória
     try:
         secret_payload = decrypt_secret(credential.encrypted_secret)
         access_token = secret_payload.get("access_token")
@@ -64,6 +73,7 @@ def sync_product_stock(product_id: int, credential_id: int, db: Session) -> ErpS
 
     # Instancia o log de sincronização preliminar
     sync_log = ErpSyncLog(
+        tenant_id=tenant_id,
         product_id=product_id,
         credential_id=credential_id,
         erp_sku=erp_sku,
@@ -148,11 +158,11 @@ def sync_product_stock(product_id: int, credential_id: int, db: Session) -> ErpS
     return sync_log
 
 
-def sync_all_linked_products(credential_id: int, db: Session, max_sync: int = 20) -> List[ErpSyncLog]:
+def sync_all_linked_products(credential_id: int, db: Session, tenant_id: int, max_sync: int = 20) -> List[ErpSyncLog]:
     """Itera e sincroniza estoque de todos os produtos vinculados ao Bling de forma resiliente."""
     # Busca os produtos que têm SKU preenchido
     products = db.query(Product)\
-        .filter(Product.erp_sku.isnot(None), Product.erp_sku != "")\
+        .filter(Product.erp_sku.isnot(None), Product.erp_sku != "", Product.tenant_id == tenant_id)\
         .limit(max_sync)\
         .all()
 
@@ -160,11 +170,12 @@ def sync_all_linked_products(credential_id: int, db: Session, max_sync: int = 20
     for p in products:
         try:
             # Sincronização individual por produto
-            log_entry = sync_product_stock(p.id, credential_id, db)
+            log_entry = sync_product_stock(p.id, credential_id, db, tenant_id)
             logs.append(log_entry)
         except Exception as e:
             logger.error(f"Falha de sincronização resiliente para produto {p.id}: {str(e)}")
             err_log = ErpSyncLog(
+                tenant_id=tenant_id,
                 product_id=p.id,
                 credential_id=credential_id,
                 erp_sku=p.erp_sku or "",

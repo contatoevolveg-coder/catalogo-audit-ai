@@ -158,3 +158,162 @@ def publish_item_description(access_token: str, item_id: str, description_text: 
     except Exception as e:
         return (False, {"error": f"Erro inesperado ao enviar descrição: {str(e)}"})
 
+
+def fetch_unanswered_questions(access_token: str) -> List[dict]:
+    """Busca as perguntas não respondidas do vendedor logado.
+
+    GET /my/received_questions/search?status=UNANSWERED
+    Retorna a lista de dicionários das perguntas cruas obtidas.
+    Aplica retry com backoff exponencial para HTTP 429.
+    """
+    url = "https://api.mercadolibre.com/my/received_questions/search"
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json"
+    }
+    params = {"status": "UNANSWERED"}
+
+    max_retries = 3
+    initial_delay = 1.0
+    backoff_factor = 2.0
+
+    for attempt in range(max_retries):
+        try:
+            response = httpx.get(url, headers=headers, params=params, timeout=10.0)
+            status_code = response.status_code
+
+            # Caso seja Rate Limit (429), aplica backoff
+            if status_code == 429:
+                if attempt < max_retries - 1:
+                    delay = initial_delay * (backoff_factor ** attempt)
+                    time.sleep(delay)
+                    continue
+
+            if status_code == 200:
+                data = response.json()
+                return data.get("questions", []) if isinstance(data, dict) else []
+            return []
+
+        except Exception:
+            if attempt == max_retries - 1:
+                return []
+            time.sleep(initial_delay * (backoff_factor ** attempt))
+
+    return []
+
+
+def submit_answer(access_token: str, question_id: str, text: str) -> Tuple[bool, dict]:
+    """Envia uma resposta para uma pergunta específica no Mercado Livre.
+
+    POST /answers
+    Retorna (sucesso: bool, corpo_resposta: dict).
+    """
+    url = "https://api.mercadolibre.com/answers"
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json"
+    }
+    try:
+        q_id = int(question_id)
+    except ValueError:
+        q_id = question_id
+
+    payload = {
+        "question_id": q_id,
+        "text": text
+    }
+
+    try:
+        response = httpx.post(url, headers=headers, json=payload, timeout=10.0)
+        status_code = response.status_code
+        try:
+            body = response.json()
+        except Exception:
+            body = {"detail": response.text}
+
+        return (status_code in [200, 201], body)
+    except Exception as e:
+        return (False, {"error": f"Erro inesperado ao enviar resposta: {str(e)}"})
+
+
+def build_authorization_url(client_id: str, redirect_uri: str, state: str) -> str:
+    """Constrói a URL de autorização OAuth2 para o Mercado Livre."""
+    return f"https://auth.mercadolivre.com.br/authorization?response_type=code&client_id={client_id}&redirect_uri={redirect_uri}&state={state}"
+
+
+def exchange_code_for_token(client_id: str, client_secret: str, code: str, redirect_uri: str) -> Tuple[bool, dict]:
+    """Troca o authorization code por tokens no Mercado Livre."""
+    url = "https://api.mercadolibre.com/oauth/token"
+    headers = {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Accept": "application/json"
+    }
+    data = {
+        "grant_type": "authorization_code",
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "code": code,
+        "redirect_uri": redirect_uri
+    }
+    
+    try:
+        response = httpx.post(url, headers=headers, data=data, timeout=10.0)
+        body = response.json()
+        return (response.status_code == 200, body)
+    except Exception as e:
+        return (False, {"error": str(e)})
+
+
+def refresh_access_token(client_id: str, client_secret: str, refresh_token: str) -> Tuple[bool, dict]:
+    """Renova o access_token usando o refresh_token."""
+    url = "https://api.mercadolibre.com/oauth/token"
+    headers = {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Accept": "application/json"
+    }
+    data = {
+        "grant_type": "refresh_token",
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "refresh_token": refresh_token
+    }
+
+    try:
+        response = httpx.post(url, headers=headers, data=data, timeout=10.0)
+        body = response.json()
+        return (response.status_code == 200, body)
+    except Exception as e:
+        return (False, {"error": str(e)})
+
+
+def get_seller_id(access_token: str) -> Optional[str]:
+    """Obtém o ID do usuário (seller) logado."""
+    url = "https://api.mercadolibre.com/users/me"
+    headers = {"Authorization": f"Bearer {access_token}"}
+    try:
+        response = httpx.get(url, headers=headers, timeout=5.0)
+        if response.status_code == 200:
+            return str(response.json().get("id"))
+    except Exception:
+        pass
+    return None
+
+def fetch_orders(access_token: str, seller_id: str, limit: int = 50, offset: int = 0) -> List[dict]:
+    """Busca as vendas recentes do vendedor."""
+    url = "https://api.mercadolibre.com/orders/search"
+    headers = {"Authorization": f"Bearer {access_token}"}
+    params = {
+        "seller": seller_id,
+        "limit": limit,
+        "offset": offset,
+        "sort": "date_desc"
+    }
+
+    try:
+        response = httpx.get(url, headers=headers, params=params, timeout=10.0)
+        if response.status_code == 200:
+            data = response.json()
+            return data.get("results", [])
+    except Exception:
+        pass
+    return []

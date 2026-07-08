@@ -54,3 +54,15 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         )
 
     return user
+
+def get_current_tenant(current_user: User = Depends(get_current_user)) -> int:
+    """Extrai o ID do tenant (lojista) ao qual o usuário logado pertence.
+    
+    Usado para isolar queries (Multi-Tenant).
+    """
+    if current_user.tenant_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Usuário não vinculado a nenhuma organização/tenant."
+        )
+    return current_user.tenant_id

@@ -6,8 +6,11 @@ from sqlalchemy.orm import Session
 
 from backend.app.database import Product, Suggestion, Credential, MarketplacePublication, ExternalCallLog
 from backend.app.security.crypto import decrypt_secret
-from backend.app.integrations.mercado_livre import publish_item, publish_item_description
+from backend.app.integrations.mercado_livre import publish_item as ml_publish_item, publish_item_description
+from backend.app.integrations.shopee import publish_item as shopee_publish_item
+from backend.app.config import SHOPEE_PARTNER_ID, SHOPEE_PARTNER_KEY
 from backend.app.constants import DEFAULT_ML_LISTING_TYPE
+from backend.app.services.oauth_service import refresh_if_needed
 
 logger = logging.getLogger(__name__)
 
@@ -18,14 +21,15 @@ def publish_product_to_ml(
     product_id: int,
     credential_id: int,
     category_id: str,
-    db: Session
+    db: Session,
+    tenant_id: int
 ) -> MarketplacePublication:
     """Publica um anúncio no Mercado Livre utilizando as credenciais da Fase 3 e sugestões aprovadas da Fase 0.
 
     Segue regras estritas de duplo portão de aprovação humana e segurança de chaves.
     """
     # 1. Busca o produto
-    product = db.query(Product).filter(Product.id == product_id).first()
+    product = db.query(Product).filter(Product.id == product_id, Product.tenant_id == tenant_id).first()
     if not product:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -34,7 +38,7 @@ def publish_product_to_ml(
 
     # 2. Busca a Suggestion mais recente do produto
     suggestion = db.query(Suggestion)\
-        .filter(Suggestion.product_id == product_id)\
+        .filter(Suggestion.product_id == product_id, Suggestion.tenant_id == tenant_id)\
         .order_by(Suggestion.id.desc())\
         .first()
 
@@ -45,20 +49,28 @@ def publish_product_to_ml(
         )
 
     # 3. Busca a Credential
-    credential = db.query(Credential).filter(Credential.id == credential_id).first()
+    credential = db.query(Credential).filter(Credential.id == credential_id, Credential.tenant_id == tenant_id).first()
     if not credential:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Credencial não encontrada."
         )
 
-    if credential.provider != "mercado_livre" or credential.status != "valid":
+    if credential.provider != "mercado_livre" or credential.status not in ["valid", "expired"]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Credencial não está válida. Rode o teste de conectividade ou rotacione o token."
+            detail="Credencial não está válida."
         )
 
-    # 4. Decripta o secret em memória
+    # 4. Refresh token (OAuth2 Fase 10)
+    credential = refresh_if_needed(credential, db)
+    if credential.status != "valid":
+         raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Falha na renovação da credencial: {credential.status_detail}"
+        )
+
+    # 5. Decripta o secret em memória
     try:
         secret_payload = decrypt_secret(credential.encrypted_secret)
         access_token = secret_payload.get("access_token")
@@ -71,7 +83,7 @@ def publish_product_to_ml(
             detail=f"Falha ao decriptografar chave de acesso: {str(e)}"
         )
 
-    # 5. Monta o payload (Título truncado a 60 chars)
+    # 6. Monta o payload (Título truncado a 60 chars)
     title = (suggestion.suggested_title or "").strip()
     if len(title) > 60:
         title = title[:60]
@@ -120,10 +132,11 @@ def publish_product_to_ml(
 
     # 6. Chama publish_item
     start_time = time.time()
-    success, ml_response = publish_item(access_token, payload)
+    success, ml_response = ml_publish_item(access_token, payload)
     latency = time.time() - start_time
 
     pub = MarketplacePublication(
+        tenant_id=tenant_id,
         product_id=product_id,
         credential_id=credential_id,
         category_id=category_id,
@@ -163,11 +176,131 @@ def publish_product_to_ml(
         if not desc_success:
             pub.error_detail = f"Anúncio criado, mas falhou ao enviar descrição: {str(desc_response)}"
 
-    # 7. Registra chamada no ExternalCallLog (NUNCA incluir token em detail!)
+    # 8. Registra chamada no ExternalCallLog (NUNCA incluir token em detail!)
     db_log = ExternalCallLog(
         kind="ml_publish",
         target_url="https://api.mercadolibre.com/items",
         status_code=201 if success else 400,
+        success=success,
+        latency_seconds=latency,
+        detail={
+            "product_id": product_id,
+            "credential_id": credential_id,
+            "status": pub.status,
+            "error_detail": pub.error_detail,
+            "marketplace_item_id": pub.marketplace_item_id
+        }
+    )
+    
+    db.add(pub)
+    db.add(db_log)
+    db.commit()
+    db.refresh(pub)
+
+    return pub
+
+def publish_product_to_shopee(
+    product_id: int,
+    credential_id: int,
+    category_id: int,
+    db: Session,
+    tenant_id: int
+) -> MarketplacePublication:
+    """Publica um anúncio na Shopee utilizando as credenciais da Fase 3 e sugestões aprovadas da Fase 0."""
+    
+    product = db.query(Product).filter(Product.id == product_id, Product.tenant_id == tenant_id).first()
+    if not product:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Produto não encontrado.")
+
+    suggestion = db.query(Suggestion).filter(Suggestion.product_id == product_id, Suggestion.tenant_id == tenant_id).order_by(Suggestion.id.desc()).first()
+    if not suggestion or suggestion.status != "approved":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Produto precisa ter uma sugestão aprovada antes de ser publicado.")
+
+    credential = db.query(Credential).filter(Credential.id == credential_id, Credential.tenant_id == tenant_id).first()
+    if not credential:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Credencial não encontrada.")
+
+    if credential.provider != "shopee" or credential.status not in ["valid", "expired"]:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Credencial da Shopee não está válida.")
+
+    credential = refresh_if_needed(credential, db)
+    if credential.status != "valid":
+         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=f"Falha na renovação da credencial: {credential.status_detail}")
+
+    try:
+        secret_payload = decrypt_secret(credential.encrypted_secret)
+        access_token = secret_payload.get("access_token")
+        shop_id = secret_payload.get("shop_id")
+        if not access_token or not shop_id:
+            raise ValueError("Token de acesso ou shop_id ausentes na credencial.")
+    except Exception as e:
+        logger.error(f"Erro ao decriptografar credencial: {str(e)}")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Falha ao decriptografar chave de acesso: {str(e)}")
+
+    if not SHOPEE_PARTNER_ID or not SHOPEE_PARTNER_KEY:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="SHOPEE_PARTNER_ID e SHOPEE_PARTNER_KEY não configurados.")
+
+    title = (suggestion.suggested_title or "").strip()
+    if len(title) > 120:
+        title = title[:120]
+
+    # Payload simplificado para Shopee Open Platform V2
+    payload = {
+        "original_price": product.price,
+        "description": suggestion.suggested_description or "Descrição",
+        "weight": 1.0,
+        "item_name": title,
+        "item_status": "NORMAL",
+        "normal_stock": product.available_quantity or 1,
+        "category_id": int(category_id),
+        "logistic_info": [{"logistic_id": 10004, "enabled": True}], # Logistic genérico fallback
+        "image": {"image_id_list": []}
+    }
+
+    db_request_payload = payload.copy()
+
+    start_time = time.time()
+    success, shopee_response = shopee_publish_item(
+        int(SHOPEE_PARTNER_ID),
+        SHOPEE_PARTNER_KEY,
+        access_token,
+        int(shop_id),
+        payload
+    )
+    latency = time.time() - start_time
+
+    pub = MarketplacePublication(
+        tenant_id=tenant_id,
+        product_id=product_id,
+        credential_id=credential_id,
+        category_id=str(category_id),
+        request_payload=db_request_payload,
+        response_payload=shopee_response,
+        created_at=_utcnow()
+    )
+
+    if not success:
+        pub.status = "error"
+        if shopee_response.get("error") in ["error_auth", "error_token_expired"]:
+            credential.status = "expired"
+            credential.status_detail = "Token expirado ou inválido (retorno Auth Shopee)"
+            credential.updated_at = _utcnow()
+            pub.error_detail = "Token de acesso expirado ou inválido."
+        else:
+            pub.error_detail = shopee_response.get("message") or shopee_response.get("error") or str(shopee_response)
+    else:
+        pub.status = "success"
+        # O ID do item retornado pela Shopee V2 geralmente fica em response.response.item_id
+        resp_data = shopee_response.get("response", {})
+        pub.marketplace_item_id = str(resp_data.get("item_id", ""))
+        
+        product.external_listing_id = pub.marketplace_item_id
+        product.status = "published"
+
+    db_log = ExternalCallLog(
+        kind="shopee_publish",
+        target_url="https://partner.shopeemobile.com/api/v2/product/add_item",
+        status_code=200 if success else 400,
         success=success,
         latency_seconds=latency,
         detail={

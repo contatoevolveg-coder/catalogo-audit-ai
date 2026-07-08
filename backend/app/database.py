@@ -31,10 +31,19 @@ engine = create_engine(DATABASE_URL, **engine_args)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
+class Tenant(Base):
+    __tablename__ = "tenants"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    plan = Column(String, default="free")
+    created_at = Column(DateTime, default=_utcnow)
+
 class Product(Base):
     __tablename__ = "products"
 
     id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
     title = Column(String, nullable=False, index=True)
     description = Column(String, nullable=True)
     images = Column(JSON, nullable=True)  # Lista de URLs das imagens
@@ -59,6 +68,7 @@ class Suggestion(Base):
     __tablename__ = "suggestions"
 
     id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
     product_id = Column(Integer, ForeignKey("products.id", ondelete="CASCADE"), nullable=False, index=True)
     suggested_title = Column(String, nullable=False)
     suggested_description = Column(String, nullable=False)
@@ -71,10 +81,26 @@ class Suggestion(Base):
 
     product = relationship("Product", back_populates="suggestions")
 
+class SuggestionFeedback(Base):
+    __tablename__ = "suggestion_feedbacks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    suggestion_id = Column(Integer, ForeignKey("suggestions.id", ondelete="CASCADE"), nullable=False, index=True)
+    field = Column(String, nullable=False)  # "title" ou "description"
+    ai_value = Column(String, nullable=False)
+    human_value = Column(String, nullable=False)
+    was_edited = Column(Boolean, default=False, nullable=False)
+    edit_distance = Column(Float, nullable=False)  # 0.0 a 1.0
+    created_at = Column(DateTime, default=_utcnow)
+
+    # Dados serão usados futuramente para few-shot tuning por usuário/marketplace.
+    suggestion = relationship("Suggestion")
+
 class AuditLog(Base):
     __tablename__ = "audit_logs"
 
     id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
     product_id = Column(Integer, ForeignKey("products.id", ondelete="CASCADE"), nullable=False, index=True)
     input_payload = Column(JSON, nullable=False)
     output_payload = Column(JSON, nullable=True)
@@ -91,6 +117,7 @@ class ImportBatch(Base):
     __tablename__ = "import_batches"
 
     id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
     filename = Column(String, nullable=False)
     marketplace = Column(String, nullable=False, index=True)
     status = Column(String, nullable=False, default="uploaded", index=True)
@@ -135,6 +162,7 @@ class Credential(Base):
     __tablename__ = "credentials"
 
     id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
     provider = Column(String, nullable=False, index=True)  # ex.: "mercado_livre", "shopee", "bling"
     provider_type = Column(String, nullable=False)  # "marketplace" ou "erp"
     label = Column(String, nullable=False)  # nome amigável dado pelo usuário
@@ -143,6 +171,7 @@ class Credential(Base):
     scopes = Column(JSON, nullable=False)  # lista de strings validadas contra um conjunto permitido
     status = Column(String, default="untested", nullable=False, index=True)  # untested|valid|expired|error
     status_detail = Column(String, nullable=True)
+    token_expires_at = Column(DateTime, nullable=True)  # Adicionado para Fase 10 (OAuth2)
     last_checked_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
@@ -151,6 +180,7 @@ class MarketplacePublication(Base):
     __tablename__ = "marketplace_publications"
 
     id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
     product_id = Column(Integer, ForeignKey("products.id", ondelete="CASCADE"), nullable=False, index=True)
     credential_id = Column(Integer, ForeignKey("credentials.id"), nullable=False, index=True)
     marketplace_item_id = Column(String, nullable=True)  # ID retornado pelo ML (ex.: "MLB123456")
@@ -169,6 +199,7 @@ class ErpSyncLog(Base):
     __tablename__ = "erp_sync_logs"
 
     id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
     product_id = Column(Integer, ForeignKey("products.id", ondelete="CASCADE"), nullable=False, index=True)
     credential_id = Column(Integer, ForeignKey("credentials.id"), nullable=False, index=True)
     erp_sku = Column(String, nullable=False)
@@ -191,6 +222,7 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
     username = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
     role = Column(String, default="admin")
@@ -208,6 +240,104 @@ class AuthAttempt(Base):
     success = Column(Boolean, nullable=False)
     created_at = Column(DateTime, default=_utcnow, index=True)
 
+
+class OAuthState(Base):
+    __tablename__ = "oauth_states"
+
+    id = Column(Integer, primary_key=True, index=True)
+    state = Column(String, unique=True, index=True, nullable=False)
+    provider = Column(String, nullable=False, index=True)
+    created_at = Column(DateTime, default=_utcnow, nullable=False)
+
+
+class CustomerQuestion(Base):
+    __tablename__ = "customer_questions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
+    credential_id = Column(Integer, ForeignKey("credentials.id"), nullable=False, index=True)
+    ml_question_id = Column(String, unique=True, index=True, nullable=False)
+    item_id = Column(String, index=True, nullable=False)
+    matched_product_id = Column(Integer, ForeignKey("products.id", ondelete="SET NULL"), nullable=True)
+    question_text = Column(Text, nullable=False)
+    asker_nickname = Column(String, nullable=True)
+    status = Column(String, default="pending_draft", index=True, nullable=False)  # pending_draft | draft_ready | approved_sent | error | dismissed
+    ai_suggested_answer = Column(Text, nullable=True)
+    final_answer_text = Column(Text, nullable=True)
+    needs_human_review = Column(Boolean, default=False, nullable=False)
+    review_reason = Column(Text, nullable=True)
+    tokens_input = Column(Integer, nullable=True)
+    tokens_output = Column(Integer, nullable=True)
+    latency_seconds = Column(Float, nullable=True)
+    ml_created_at = Column(DateTime, nullable=True)
+    fetched_at = Column(DateTime, default=_utcnow, index=True, nullable=False)
+    answered_at = Column(DateTime, nullable=True)
+
+    # Relacionamentos
+    credential = relationship("Credential")
+    product = relationship("Product")
+
+
+class SchedulerRun(Base):
+    __tablename__ = "scheduler_runs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    job = Column(String, nullable=False, index=True)
+    start_time = Column(DateTime, nullable=False)
+    end_time = Column(DateTime, nullable=True)
+    items_processed = Column(Integer, default=0, nullable=False)
+    errors = Column(Text, nullable=True)
+
+class Order(Base):
+    __tablename__ = "orders"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
+    marketplace = Column(String, nullable=False, index=True)
+    external_order_id = Column(String, unique=True, nullable=False, index=True)
+    credential_id = Column(Integer, ForeignKey("credentials.id"), nullable=False, index=True)
+    buyer_nickname = Column(String, nullable=True)
+    total_amount = Column(Float, nullable=False)
+    status = Column(String, nullable=False, index=True)
+    shipping_status = Column(String, nullable=True)
+    stock_deducted = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=_utcnow, nullable=False)
+
+    # Relacionamentos
+    credential = relationship("Credential")
+    items = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan")
+
+class OrderItem(Base):
+    __tablename__ = "order_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    order_id = Column(Integer, ForeignKey("orders.id", ondelete="CASCADE"), nullable=False, index=True)
+    product_id = Column(Integer, ForeignKey("products.id", ondelete="SET NULL"), nullable=True, index=True)
+    sku = Column(String, nullable=True)
+    title = Column(String, nullable=False)
+    quantity = Column(Integer, nullable=False)
+    unit_price = Column(Float, nullable=False)
+
+    # Relacionamentos
+    order = relationship("Order", back_populates="items")
+    product = relationship("Product")
+
+class Alert(Base):
+    __tablename__ = "alerts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
+    type = Column(String, nullable=False, index=True)  # low_stock | credential_expiring | low_seo_score | answer_pending
+    severity = Column(String, nullable=False)  # HIGH | MEDIUM | LOW
+    product_id = Column(Integer, ForeignKey("products.id", ondelete="CASCADE"), nullable=True, index=True)
+    credential_id = Column(Integer, ForeignKey("credentials.id", ondelete="CASCADE"), nullable=True, index=True)
+    message = Column(Text, nullable=False)
+    is_read = Column(Boolean, default=False, nullable=False, index=True)
+    created_at = Column(DateTime, default=_utcnow, nullable=False)
+
+    # Relacionamentos
+    product = relationship("Product")
+    credential = relationship("Credential")
 
 
 def init_db():

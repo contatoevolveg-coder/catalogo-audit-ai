@@ -48,14 +48,14 @@ def test_publish_endpoints_guard(client):
     """Garante que qualquer chamada sem JWT válido retorne 401."""
     # 1. Category Suggestions
     res1 = client.get(
-        "/marketplace-integrations/mercado-livre/category-suggestions?title=celular",
+        "/marketplace-integrations/mercado_livre/category-suggestions?title=celular",
         headers={"skip_auth": True}
     )
     assert res1.status_code == 401
 
     # 2. Publish product
     res2 = client.post(
-        "/marketplace-integrations/mercado-livre/products/1/publish",
+        "/marketplace-integrations/products/1/publish",
         json={"credential_id": 1, "category_id": "MLB1051"},
         headers={"skip_auth": True}
     )
@@ -63,7 +63,7 @@ def test_publish_endpoints_guard(client):
 
     # 3. History
     res3 = client.get(
-        "/marketplace-integrations/mercado-livre/products/1/publications",
+        "/marketplace-integrations/products/1/publications",
         headers={"skip_auth": True}
     )
     assert res3.status_code == 401
@@ -138,7 +138,7 @@ def test_publish_happy_path(client, monkeypatch):
     # 4. Executa a publicação
     headers = {"X-Admin-Key": "test-admin-secret-key"}
     response = client.post(
-        f"/marketplace-integrations/mercado-livre/products/{product_id}/publish",
+        f"/marketplace-integrations/products/{product_id}/publish",
         json={"credential_id": cred_id, "category_id": "MLB1051"},
         headers=headers
     )
@@ -205,7 +205,7 @@ def test_publish_blocked_by_pending_suggestion(client):
     # Dispara publish sem mockar httpx (não deve sequer tentar disparar requisição)
     headers = {"X-Admin-Key": "test-admin-secret-key"}
     response = client.post(
-        f"/marketplace-integrations/mercado-livre/products/{product_id}/publish",
+        f"/marketplace-integrations/products/{product_id}/publish",
         json={"credential_id": cred_id, "category_id": "MLB1051"},
         headers=headers
     )
@@ -262,21 +262,21 @@ def test_publish_blocked_by_invalid_credential(client):
     
     # 1. Provedor shopee -> 400
     res1 = client.post(
-        f"/marketplace-integrations/mercado-livre/products/{product_id}/publish",
-        json={"credential_id": cred_shopee_id, "category_id": "MLB1051"},
+        f"/marketplace-integrations/products/{product_id}/publish",
+        json={"credential_id": cred_shopee_id, "category_id": "1051"},
         headers=headers
     )
     assert res1.status_code == 400
-    assert "Credencial não está válida" in res1.json()["detail"]
+    assert "Token de acesso ou shop_id ausentes" in res1.json()["detail"]
 
-    # 2. Expirado -> 400
+    # 2. Expirado -> 401 (agora retorna 401 via refresh_if_needed)
     res2 = client.post(
-        f"/marketplace-integrations/mercado-livre/products/{product_id}/publish",
+        f"/marketplace-integrations/products/{product_id}/publish",
         json={"credential_id": cred_ml_exp_id, "category_id": "MLB1051"},
         headers=headers
     )
-    assert res2.status_code == 400
-    assert "Credencial não está válida" in res2.json()["detail"]
+    assert res2.status_code == 401
+    assert "Falha na renovação da credencial" in res2.json()["detail"]
 
 def test_publish_token_expired_401(client, monkeypatch):
     """Garante que erro 401 do ML altera a credencial para 'expired' e retorna 502."""
@@ -320,7 +320,7 @@ def test_publish_token_expired_401(client, monkeypatch):
 
     headers = {"X-Admin-Key": "test-admin-secret-key"}
     response = client.post(
-        f"/marketplace-integrations/mercado-livre/products/{product_id}/publish",
+        f"/marketplace-integrations/products/{product_id}/publish",
         json={"credential_id": cred_id, "category_id": "MLB1051"},
         headers=headers
     )
@@ -381,7 +381,7 @@ def test_publish_validation_error_400(client, monkeypatch):
 
     headers = {"X-Admin-Key": "test-admin-secret-key"}
     response = client.post(
-        f"/marketplace-integrations/mercado-livre/products/{product_id}/publish",
+        f"/marketplace-integrations/products/{product_id}/publish",
         json={"credential_id": cred_id, "category_id": "MLB1051"},
         headers=headers
     )
@@ -416,7 +416,7 @@ def test_category_suggestions_success(client, monkeypatch):
 
     headers = {"X-Admin-Key": "test-admin-secret-key"}
     response = client.get(
-        "/marketplace-integrations/mercado-livre/category-suggestions?title=celular",
+        "/marketplace-integrations/mercado_livre/category-suggestions?title=celular",
         headers=headers
     )
     
@@ -435,7 +435,7 @@ def test_category_suggestions_network_error(client, monkeypatch):
 
     headers = {"X-Admin-Key": "test-admin-secret-key"}
     response = client.get(
-        "/marketplace-integrations/mercado-livre/category-suggestions?title=celular",
+        "/marketplace-integrations/mercado_livre/category-suggestions?title=celular",
         headers=headers
     )
     

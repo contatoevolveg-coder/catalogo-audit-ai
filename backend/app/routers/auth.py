@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime, timezone
 
 from backend.app import config
-from backend.app.database import get_db, User
+from backend.app.database import get_db, User, Tenant
 from backend.app.schemas import UserRegisterRequest, UserResponse, TokenResponse
 from backend.app.security.auth import hash_password, verify_password, create_access_token
 from backend.app.security.dependencies import get_current_user
@@ -60,13 +60,20 @@ def register_user(
             detail="Já existe um usuário cadastrado com este username."
         )
 
-    # Cria o novo usuário com hash de senha seguro
+    # Cria um novo Tenant para o usuário
+    new_tenant = Tenant(name=f"Organização de {data.username}")
+    db.add(new_tenant)
+    db.commit()
+    db.refresh(new_tenant)
+
+    # Cria o novo usuário vinculado ao Tenant
     hashed = hash_password(data.password)
     new_user = User(
         username=data.username,
         hashed_password=hashed,
         role="admin",
-        is_active=True
+        is_active=True,
+        tenant_id=new_tenant.id
     )
     
     db.add(new_user)

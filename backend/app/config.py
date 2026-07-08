@@ -54,6 +54,15 @@ JWT_EXPIRE_HOURS = int(os.getenv("JWT_EXPIRE_HOURS", "8"))
 LOGIN_MAX_ATTEMPTS = int(os.getenv("LOGIN_MAX_ATTEMPTS", "5"))
 LOGIN_LOCKOUT_MINUTES = int(os.getenv("LOGIN_LOCKOUT_MINUTES", "15"))
 
+# Configurações de Integração OAuth2 (Mercado Livre, Bling, Shopee)
+ML_CLIENT_ID = os.getenv("ML_CLIENT_ID", "")
+ML_CLIENT_SECRET = os.getenv("ML_CLIENT_SECRET", "")
+BLING_CLIENT_ID = os.getenv("BLING_CLIENT_ID", "")
+BLING_CLIENT_SECRET = os.getenv("BLING_CLIENT_SECRET", "")
+SHOPEE_PARTNER_ID = os.getenv("SHOPEE_PARTNER_ID", "")
+SHOPEE_PARTNER_KEY = os.getenv("SHOPEE_PARTNER_KEY", "")
+OAUTH_REDIRECT_BASE_URL = os.getenv("OAUTH_REDIRECT_BASE_URL", "http://localhost:8000")
+
 
 def is_admin_key_configured() -> bool:
     """Retorna True se a chave de administrador (ADMIN_API_KEY) estiver configurada."""
@@ -68,5 +77,13 @@ def is_encryption_configured() -> bool:
 def is_jwt_configured() -> bool:
     """Retorna True se a chave secreta do JWT (JWT_SECRET_KEY) estiver configurada."""
     return bool(JWT_SECRET_KEY.strip())
+
+
+# Configurações do Scheduler (intervalos em minutos)
+SCHEDULER_SYNC_STOCK_MINUTES = int(os.getenv("SCHEDULER_SYNC_STOCK_MINUTES", "15"))
+SCHEDULER_SYNC_QUESTIONS_MINUTES = int(os.getenv("SCHEDULER_SYNC_QUESTIONS_MINUTES", "10"))
+SCHEDULER_REFRESH_TOKENS_MINUTES = int(os.getenv("SCHEDULER_REFRESH_TOKENS_MINUTES", "30"))
+SCHEDULER_CHECK_ALERTS_MINUTES = int(os.getenv("SCHEDULER_CHECK_ALERTS_MINUTES", "10"))
+
 
 

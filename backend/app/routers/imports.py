@@ -4,7 +4,8 @@ from fastapi import APIRouter, Depends, File, UploadFile, Form, HTTPException, R
 from sqlalchemy.orm import Session
 
 from backend.app.database import get_db, ImportBatch, ImportRow, User
-from backend.app.security.dependencies import get_current_user
+from backend.app.database import get_db, ImportBatch, ImportRow, User
+from backend.app.security.dependencies import get_current_user, get_current_tenant
 from backend.app.schemas import (
     UploadResponse, ColumnMappingRequest, ImportRowResponse, 
     ValidationSummary, ImportBatchResponse, ConfirmImportResponse
@@ -49,36 +50,36 @@ def upload_planilha(
     file: UploadFile = File(...),
     marketplace: str = Form("mercado_livre"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    tenant_id: int = Depends(get_current_tenant)
 ):
     """Recebe o arquivo de planilha via multipart, cria o lote de importação e retorna a amostra."""
     content = file.file.read()
-    return import_service.parse_and_create_batch(content, file.filename, marketplace, db)
+    return import_service.parse_and_create_batch(content, file.filename, marketplace, db, tenant_id)
 
 @router.post("/{batch_id}/mapping", response_model=ImportBatchResponse)
 def define_mapping(
     batch_id: int,
     req: ColumnMappingRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    tenant_id: int = Depends(get_current_tenant)
 ):
     """Define o de-para de colunas para o lote. Valida se os campos obrigatórios foram mapeados."""
-    return import_service.save_column_mapping(batch_id, req.mapping, db)
+    return import_service.save_column_mapping(batch_id, req.mapping, db, tenant_id)
 
 @router.post("/{batch_id}/validate", response_model=ValidationSummary)
-def validate_batch(batch_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def validate_batch(batch_id: int, db: Session = Depends(get_db), tenant_id: int = Depends(get_current_tenant)):
     """Dispara a validação determinística de todas as linhas de um lote mapeado."""
-    return import_service.validate_batch(batch_id, db)
+    return import_service.validate_batch(batch_id, db, tenant_id)
 
 @router.get("", response_model=List[ImportBatchResponse])
-def list_batches(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def list_batches(db: Session = Depends(get_db), tenant_id: int = Depends(get_current_tenant)):
     """Lista todos os lotes de importação cadastrados."""
-    return db.query(ImportBatch).order_by(ImportBatch.id.desc()).all()
+    return db.query(ImportBatch).filter(ImportBatch.tenant_id == tenant_id).order_by(ImportBatch.id.desc()).all()
 
 @router.get("/{batch_id}", response_model=ImportBatchResponse)
-def get_batch(batch_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def get_batch(batch_id: int, db: Session = Depends(get_db), tenant_id: int = Depends(get_current_tenant)):
     """Retorna detalhes e status de um lote de importação."""
-    batch = db.query(ImportBatch).filter(ImportBatch.id == batch_id).first()
+    batch = db.query(ImportBatch).filter(ImportBatch.id == batch_id, ImportBatch.tenant_id == tenant_id).first()
     if not batch:
         raise HTTPException(status_code=404, detail="Lote de importação não encontrado.")
     return batch
@@ -88,9 +89,14 @@ def get_batch_rows(
     batch_id: int,
     status: Optional[str] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    tenant_id: int = Depends(get_current_tenant)
 ):
     """Retorna as linhas de dados de um lote, permitindo filtro opcional por status de validação."""
+    # Ensure the batch belongs to the tenant
+    batch = db.query(ImportBatch).filter(ImportBatch.id == batch_id, ImportBatch.tenant_id == tenant_id).first()
+    if not batch:
+        raise HTTPException(status_code=404, detail="Lote de importação não encontrado.")
+    
     query = db.query(ImportRow).filter(ImportRow.batch_id == batch_id)
     
     if status:
@@ -109,8 +115,12 @@ def get_batch_rows(
     return query.order_by(ImportRow.row_number.asc()).all()
 
 @router.get("/{batch_id}/rows/{row_id}", response_model=ImportRowResponse)
-def get_row(batch_id: int, row_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def get_row(batch_id: int, row_id: int, db: Session = Depends(get_db), tenant_id: int = Depends(get_current_tenant)):
     """Retorna o detalhe e erros de validação de uma linha específica."""
+    batch = db.query(ImportBatch).filter(ImportBatch.id == batch_id, ImportBatch.tenant_id == tenant_id).first()
+    if not batch:
+        raise HTTPException(status_code=404, detail="Lote de importação não encontrado.")
+        
     row = db.query(ImportRow).filter(ImportRow.batch_id == batch_id, ImportRow.id == row_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="Linha de importação não encontrada.")
@@ -122,16 +132,16 @@ def confirm_import(
     auto_audit: bool = False,
     max_audit: int = 15,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    tenant_id: int = Depends(get_current_tenant)
 ):
     """Confirma a importação do lote, criando Products somente a partir de linhas válidas.
     Se auto_audit for True, inicia a auditoria automática via Gemini respeitando o limite max_audit.
     """
-    return import_service.confirm_import(batch_id, db, auto_audit=auto_audit, max_audit=max_audit)
+    return import_service.confirm_import(batch_id, db, tenant_id, auto_audit=auto_audit, max_audit=max_audit)
 
 
 @router.delete("/{batch_id}")
-def delete_batch(batch_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def delete_batch(batch_id: int, db: Session = Depends(get_db), tenant_id: int = Depends(get_current_tenant)):
     """Descarta o lote de importação e limpa todas as suas linhas."""
-    import_service.discard_batch(batch_id, db)
+    import_service.discard_batch(batch_id, db, tenant_id)
     return {"message": "Lote de importação descartado com sucesso."}

@@ -73,7 +73,7 @@ def generate_suggested_mapping(detected_columns: List[str], marketplace: str) ->
 
     return mapping
 
-def parse_and_create_batch(file_content: bytes, filename: str, marketplace: str, db: Session) -> UploadResponse:
+def parse_and_create_batch(file_content: bytes, filename: str, marketplace: str, db: Session, tenant_id: int) -> UploadResponse:
     """Processa o upload do arquivo, cria o lote de importação (ImportBatch) e salva as linhas brutas (ImportRow)."""
     try:
         df = read_planilha(file_content, filename)
@@ -89,6 +89,7 @@ def parse_and_create_batch(file_content: bytes, filename: str, marketplace: str,
 
     # Cria o lote de importação
     batch = ImportBatch(
+        tenant_id=tenant_id,
         filename=filename,
         marketplace=marketplace,
         status="uploaded",
@@ -125,9 +126,9 @@ def parse_and_create_batch(file_content: bytes, filename: str, marketplace: str,
         suggested_mapping=suggested_mapping
     )
 
-def save_column_mapping(batch_id: int, mapping: Dict[str, str], db: Session) -> ImportBatch:
+def save_column_mapping(batch_id: int, mapping: Dict[str, str], db: Session, tenant_id: int) -> ImportBatch:
     """Verifica e salva o de-para de colunas. Lança erro 422 se faltar campos obrigatórios."""
-    batch = db.query(ImportBatch).filter(ImportBatch.id == batch_id).first()
+    batch = db.query(ImportBatch).filter(ImportBatch.id == batch_id, ImportBatch.tenant_id == tenant_id).first()
     if not batch:
         raise HTTPException(status_code=404, detail="Lote de importação não encontrado.")
 
@@ -151,9 +152,9 @@ def save_column_mapping(batch_id: int, mapping: Dict[str, str], db: Session) -> 
     db.refresh(batch)
     return batch
 
-def validate_batch(batch_id: int, db: Session) -> ValidationSummary:
+def validate_batch(batch_id: int, db: Session, tenant_id: int) -> ValidationSummary:
     """Executa a validação determinística linha a linha de um lote mapeado."""
-    batch = db.query(ImportBatch).filter(ImportBatch.id == batch_id).first()
+    batch = db.query(ImportBatch).filter(ImportBatch.id == batch_id, ImportBatch.tenant_id == tenant_id).first()
     if not batch:
         raise HTTPException(status_code=404, detail="Lote não encontrado.")
 
@@ -242,13 +243,14 @@ def _clean_gtin(value: Any) -> Any:
 def confirm_import(
     batch_id: int, 
     db: Session, 
+    tenant_id: int,
     auto_audit: bool = False, 
     max_audit: int = 15
 ) -> ConfirmImportResponse:
     """Confirma a importação criando produtos pendentes somente para as linhas válidas.
     Se auto_audit for True, realiza a auditoria imediata via Gemini para os produtos criados.
     """
-    batch = db.query(ImportBatch).filter(ImportBatch.id == batch_id).first()
+    batch = db.query(ImportBatch).filter(ImportBatch.id == batch_id, ImportBatch.tenant_id == tenant_id).first()
     if not batch:
         raise HTTPException(status_code=404, detail="Lote não encontrado.")
 
@@ -286,6 +288,7 @@ def confirm_import(
 
         # Cria produto preservando TODOS os campos validados
         product = Product(
+            tenant_id=tenant_id,
             title=data["title"],
             description=data.get("description"),
             category=data.get("category"),
@@ -341,9 +344,9 @@ def confirm_import(
         audit_errors=audit_errors
     )
 
-def discard_batch(batch_id: int, db: Session) -> None:
+def discard_batch(batch_id: int, db: Session, tenant_id: int) -> None:
     """Descarta o lote e todas as linhas vinculadas via cascade."""
-    batch = db.query(ImportBatch).filter(ImportBatch.id == batch_id).first()
+    batch = db.query(ImportBatch).filter(ImportBatch.id == batch_id, ImportBatch.tenant_id == tenant_id).first()
     if not batch:
         raise HTTPException(status_code=404, detail="Lote não encontrado.")
 

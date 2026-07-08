@@ -11,7 +11,7 @@ from backend.app.integrations import check_credential
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
-def create_credential(db: Session, data: CredentialCreate) -> Credential:
+def create_credential(db: Session, data: CredentialCreate, tenant_id: int) -> Credential:
     """Cria uma nova credencial criptografada e a persiste no banco de dados."""
     # 1. Criptografa o payload do segredo
     encrypted = encrypt_secret(data.secret_payload)
@@ -19,6 +19,7 @@ def create_credential(db: Session, data: CredentialCreate) -> Credential:
     masked = generate_masked_preview(data.secret_payload)
 
     db_credential = Credential(
+        tenant_id=tenant_id,
         provider=data.provider,
         provider_type=data.provider_type,
         label=data.label,
@@ -35,13 +36,13 @@ def create_credential(db: Session, data: CredentialCreate) -> Credential:
     db.refresh(db_credential)
     return db_credential
 
-def list_credentials(db: Session) -> List[Credential]:
+def list_credentials(db: Session, tenant_id: int) -> List[Credential]:
     """Lista todas as credenciais cadastradas."""
-    return db.query(Credential).order_by(Credential.id.desc()).all()
+    return db.query(Credential).filter(Credential.tenant_id == tenant_id).order_by(Credential.id.desc()).all()
 
-def get_credential(db: Session, cred_id: int) -> Credential:
+def get_credential(db: Session, cred_id: int, tenant_id: int) -> Credential:
     """Retorna uma credencial pelo ID ou levanta 404."""
-    credential = db.query(Credential).filter(Credential.id == cred_id).first()
+    credential = db.query(Credential).filter(Credential.id == cred_id, Credential.tenant_id == tenant_id).first()
     if not credential:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -49,9 +50,9 @@ def get_credential(db: Session, cred_id: int) -> Credential:
         )
     return credential
 
-def update_credential(db: Session, cred_id: int, data: CredentialUpdate) -> Credential:
+def update_credential(db: Session, cred_id: int, data: CredentialUpdate, tenant_id: int) -> Credential:
     """Atualiza metadados ou rotaciona o segredo de uma credencial existente."""
-    credential = get_credential(db, cred_id)
+    credential = get_credential(db, cred_id, tenant_id)
 
     if data.label is not None:
         credential.label = data.label
@@ -73,15 +74,15 @@ def update_credential(db: Session, cred_id: int, data: CredentialUpdate) -> Cred
     db.refresh(credential)
     return credential
 
-def delete_credential(db: Session, cred_id: int) -> None:
+def delete_credential(db: Session, cred_id: int, tenant_id: int) -> None:
     """Remove fisicamente uma credencial do banco de dados."""
-    credential = get_credential(db, cred_id)
+    credential = get_credential(db, cred_id, tenant_id)
     db.delete(credential)
     db.commit()
 
-def test_connectivity(db: Session, cred_id: int) -> Credential:
+def test_connectivity(db: Session, cred_id: int, tenant_id: int) -> Credential:
     """Decriptografa a credencial e testa sua conectividade junto ao provedor."""
-    credential = get_credential(db, cred_id)
+    credential = get_credential(db, cred_id, tenant_id)
 
     # 1. Recupera o segredo decriptografando-o em memória
     try:
