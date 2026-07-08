@@ -182,14 +182,19 @@ def test_connectivity_check_mercado_livre(client, monkeypatch):
     assert "Conexão recusada" in test_res_err.json()["status_detail"]
 
 def test_connectivity_check_fallback_untested(client):
-    """Garante que conexões para provedores não implementados retornam untested."""
+    """Garante que conexões para provedores não implementados retornam untested.
+
+    Shopee agora possui checker próprio (registrado em CHECKERS), então usamos
+    'magalu' — que permanece sem verificação implementada — para exercitar o
+    fallback genérico.
+    """
     create_res = client.post(
         "/credentials",
         json={
-            "provider": "shopee",
+            "provider": "magalu",
             "provider_type": "marketplace",
-            "label": "Shopee Test Connection",
-            "secret_payload": {"api_key": "shopee-token"},
+            "label": "Magalu Test Connection",
+            "secret_payload": {"api_key": "magalu-token"},
             "scopes": ["read_products"]
         },
         headers={"X-Admin-Key": "test-admin-secret-key"}
