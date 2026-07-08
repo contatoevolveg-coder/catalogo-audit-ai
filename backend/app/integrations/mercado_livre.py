@@ -317,3 +317,71 @@ def fetch_orders(access_token: str, seller_id: str, limit: int = 50, offset: int
     except Exception:
         pass
     return []
+
+
+def fetch_seller_item_ids(access_token: str, seller_id: str, limit: int = 50, offset: int = 0) -> Tuple[List[str], int]:
+    """Busca os IDs dos anúncios ativos do vendedor logado.
+
+    GET /users/{seller_id}/items/search
+    Retorna (lista_de_item_ids, total_de_itens_no_vendedor).
+    """
+    url = f"https://api.mercadolibre.com/users/{seller_id}/items/search"
+    headers = {"Authorization": f"Bearer {access_token}"}
+    params = {"limit": limit, "offset": offset}
+
+    try:
+        response = httpx.get(url, headers=headers, params=params, timeout=10.0)
+        if response.status_code == 200:
+            data = response.json()
+            ids = data.get("results", [])
+            total = data.get("paging", {}).get("total", len(ids))
+            return ids, total
+    except Exception:
+        pass
+    return [], 0
+
+
+def fetch_items_details(access_token: str, item_ids: List[str]) -> List[dict]:
+    """Busca os dados completos de até 20 itens por chamada (multiget da API do ML).
+
+    GET /items?ids=id1,id2,...
+    Retorna a lista de corpos (body) dos itens que responderam com sucesso (code 200).
+    """
+    if not item_ids:
+        return []
+
+    url = "https://api.mercadolibre.com/items"
+    headers = {"Authorization": f"Bearer {access_token}"}
+    results = []
+
+    # A API do ML aceita no máximo 20 IDs por chamada no endpoint multiget.
+    for i in range(0, len(item_ids), 20):
+        batch = item_ids[i:i + 20]
+        params = {"ids": ",".join(batch)}
+        try:
+            response = httpx.get(url, headers=headers, params=params, timeout=10.0)
+            if response.status_code == 200:
+                for entry in response.json():
+                    if entry.get("code") == 200 and entry.get("body"):
+                        results.append(entry["body"])
+        except Exception:
+            continue
+
+    return results
+
+
+def fetch_item_description(access_token: str, item_id: str) -> str:
+    """Busca a descrição em texto puro de um item já publicado.
+
+    GET /items/{item_id}/description
+    """
+    url = f"https://api.mercadolibre.com/items/{item_id}/description"
+    headers = {"Authorization": f"Bearer {access_token}"}
+    try:
+        response = httpx.get(url, headers=headers, timeout=10.0)
+        if response.status_code == 200:
+            data = response.json()
+            return data.get("plain_text") or data.get("text") or ""
+    except Exception:
+        pass
+    return ""

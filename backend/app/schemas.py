@@ -213,6 +213,16 @@ class PublishRequest(BaseModel):
     credential_id: int = Field(description="ID da credencial do cofre (Fase 3) para publicação")
     category_id: str = Field(min_length=1, description="ID da categoria no Mercado Livre a publicar")
 
+class ImportMlItemsRequest(BaseModel):
+    credential_id: int = Field(description="ID da credencial do Mercado Livre no cofre")
+    max_items: int = Field(100, ge=1, le=500, description="Limite máximo de anúncios a importar/atualizar")
+
+class ImportMlItemsResponse(BaseModel):
+    found: int = Field(description="Quantidade de anúncios encontrados na conta do vendedor")
+    imported: int = Field(description="Quantidade de novos produtos criados no catálogo local")
+    updated: int = Field(description="Quantidade de produtos já vinculados que foram atualizados")
+    errors: List[Dict[str, Any]] = Field(description="Erros estruturados ocorridos durante a importação")
+
 class MarketplacePublicationResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

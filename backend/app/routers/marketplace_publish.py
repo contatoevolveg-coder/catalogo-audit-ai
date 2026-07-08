@@ -4,9 +4,11 @@ from sqlalchemy.orm import Session
 
 from backend.app.database import get_db, MarketplacePublication, User, Credential
 from backend.app.schemas import (
-    CategorySuggestion, PublishRequest, MarketplacePublicationResponse
+    CategorySuggestion, PublishRequest, MarketplacePublicationResponse,
+    ImportMlItemsRequest, ImportMlItemsResponse
 )
 from backend.app.services.marketplace_publish_service import publish_product_to_ml, publish_product_to_shopee
+from backend.app.services.marketplace_import_service import import_ml_items
 from backend.app.integrations.mercado_livre import predict_category as ml_predict_category
 from backend.app.security.dependencies import get_current_user, get_current_tenant
 
@@ -93,3 +95,20 @@ def get_publications_history(
         .filter(MarketplacePublication.product_id == product_id, MarketplacePublication.tenant_id == tenant_id)\
         .order_by(MarketplacePublication.created_at.desc())\
         .all()
+
+@router.post(
+    "/mercado_livre/import-items",
+    response_model=ImportMlItemsResponse
+)
+def import_mercado_livre_items(
+    data: ImportMlItemsRequest,
+    db: Session = Depends(get_db),
+    tenant_id: int = Depends(get_current_tenant)
+):
+    """Importa os anúncios já publicados na conta do Mercado Livre vinculada para o catálogo local."""
+    return import_ml_items(
+        credential_id=data.credential_id,
+        db=db,
+        tenant_id=tenant_id,
+        max_items=data.max_items
+    )
