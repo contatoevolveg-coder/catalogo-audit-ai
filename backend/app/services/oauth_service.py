@@ -47,6 +47,7 @@ def handle_callback(provider: str, code: str, state: str, label: str, db: Sessio
     requisição de callback, já que o navegador é redirecionado diretamente pelo
     provedor (ML/Bling/Shopee) sem carregar nosso token de sessão.
     """
+    state = state.strip() if state else state
     db_state = db.query(OAuthState).filter(OAuthState.state == state).first()
     if not db_state:
         raise HTTPException(status_code=400, detail="State inválido ou expirado")
@@ -62,8 +63,6 @@ def handle_callback(provider: str, code: str, state: str, label: str, db: Sessio
         raise HTTPException(status_code=400, detail="State expirado")
 
     tenant_id = db_state.tenant_id
-    db.delete(db_state)
-    db.commit()
     
     # Troca de código por token
     success = False
@@ -124,7 +123,11 @@ def handle_callback(provider: str, code: str, state: str, label: str, db: Sessio
         last_checked_at=datetime.datetime.utcnow()
     )
     db.add(cred)
+    
+    # Remove o state após sucesso
+    db.delete(db_state)
     db.commit()
+    
     db.refresh(cred)
     
     return cred

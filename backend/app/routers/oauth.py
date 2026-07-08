@@ -103,6 +103,9 @@ def callback_provider_redirect(
             <html><body style="font-family: sans-serif; text-align: center; padding: 60px;">
                 <h2>❌ Falha ao conectar</h2>
                 <p>{e.detail}</p>
+                <p style="margin-top: 20px; font-size: 14px; color: #666;">
+                    Sugestão: Feche esta aba, volte ao painel, gere um NOVO link de autorização e tente novamente.
+                </p>
             </body></html>
             """,
             status_code=e.status_code
