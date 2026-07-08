@@ -108,10 +108,13 @@ def import_ml_items(credential_id: int, db: Session, tenant_id: int, max_items: 
             pictures = [p.get("secure_url") or p.get("url") for p in (item.get("pictures") or []) if p.get("secure_url") or p.get("url")]
             attrs = _extract_attributes(item)
 
+            ml_status = item.get("status")  # active | paused | closed | under_review
+
             if existing:
                 existing.price = item.get("price", existing.price)
                 existing.available_quantity = item.get("available_quantity", existing.available_quantity)
-                existing.status = "published" if item.get("status") == "active" else existing.status
+                existing.marketplace_status = ml_status
+                existing.status = "published" if ml_status == "active" else existing.status
                 updated += 1
             else:
                 description = fetch_item_description(access_token, external_id)
@@ -124,6 +127,7 @@ def import_ml_items(credential_id: int, db: Session, tenant_id: int, max_items: 
                     price=item.get("price", 0.0),
                     marketplace="mercado_livre",
                     status="published",
+                    marketplace_status=ml_status,
                     available_quantity=item.get("available_quantity"),
                     condition=item.get("condition"),
                     attributes=attrs or None,

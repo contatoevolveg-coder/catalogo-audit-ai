@@ -47,6 +47,7 @@ class ProductResponse(ProductBase):
     id: int
     status: str
     external_listing_id: Optional[str] = None
+    marketplace_status: Optional[str] = None
     erp_sku: Optional[str] = None
     created_at: datetime
 

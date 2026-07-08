@@ -55,6 +55,7 @@ class Product(Base):
     condition = Column(String, nullable=True)                 # new, used
     attributes = Column(JSON, nullable=True)                  # {brand, model, gtin_ean, ...}
     external_listing_id = Column(String, nullable=True)       # ID retornado após publicação com sucesso
+    marketplace_status = Column(String, nullable=True, index=True)  # status real no ML: active | paused | closed | under_review
     erp_sku = Column(String, nullable=True, index=True)       # SKU do Bling ERP vinculado manualmente
     created_at = Column(DateTime, default=_utcnow)
 

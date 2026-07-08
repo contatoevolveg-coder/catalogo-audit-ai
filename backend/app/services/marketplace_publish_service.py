@@ -168,6 +168,7 @@ def publish_product_to_ml(
         # Atualiza status do produto
         product.external_listing_id = pub.marketplace_item_id
         product.status = "published"
+        product.marketplace_status = "active"
 
         # Tenta enviar a descrição na segunda chamada (operação best-effort)
         desc_success, desc_response = publish_item_description(
@@ -293,9 +294,10 @@ def publish_product_to_shopee(
         # O ID do item retornado pela Shopee V2 geralmente fica em response.response.item_id
         resp_data = shopee_response.get("response", {})
         pub.marketplace_item_id = str(resp_data.get("item_id", ""))
-        
+
         product.external_listing_id = pub.marketplace_item_id
         product.status = "published"
+        product.marketplace_status = "active"
 
     db_log = ExternalCallLog(
         kind="shopee_publish",

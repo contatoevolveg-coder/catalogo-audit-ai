@@ -90,7 +90,6 @@ def render(api_url: str, headers: dict, current_user: dict) -> None:
         return
 
     ml_products = [p for p in products if p.get("marketplace") == "mercado_livre"]
-    st.markdown(f"#### 📦 {len(ml_products)} anúncios no catálogo")
 
     if not ml_products:
         st.info("Nenhum anúncio ainda. Importe da sua conta do Mercado Livre acima.")
@@ -100,11 +99,29 @@ def render(api_url: str, headers: dict, current_user: dict) -> None:
     if search:
         ml_products = [p for p in ml_products if search.lower() in (p.get("title") or "").lower()]
 
-    for p in ml_products:
+    # -----------------------------------------------------
+    # Divisão: ATIVOS na plataforma  x  NÃO ATIVOS
+    # Ativo = anúncio publicado e com status 'active' no Mercado Livre.
+    # Não ativo = pausado, encerrado, em revisão, ou ainda não publicado (só local).
+    # -----------------------------------------------------
+    ativos = [p for p in ml_products if p.get("marketplace_status") == "active"]
+    inativos = [p for p in ml_products if p.get("marketplace_status") != "active"]
+
+    STATUS_LABELS = {
+        "active": ("🟢", "Ativo"),
+        "paused": ("🟡", "Pausado"),
+        "closed": ("🔴", "Encerrado"),
+        "under_review": ("🔵", "Em revisão"),
+        None: ("⚪", "Não publicado"),
+    }
+
+    def render_product(p):
         ext = p.get("external_listing_id")
-        badge = f"<span style='color:#34d399;'>🟢 ML: {ext}</span>" if ext else "<span style='color:#f59e0b;'>⚪ só local</span>"
-        with st.expander(f"{p['title']}  —  R$ {p.get('price') or 0:.2f}  ·  estoque {p.get('available_quantity') if p.get('available_quantity') is not None else '—'}"):
-            st.markdown(f"{badge} · status: **{p['status']}** · ID local: {p['id']}", unsafe_allow_html=True)
+        mstatus = p.get("marketplace_status")
+        icon, label = STATUS_LABELS.get(mstatus, ("⚪", mstatus or "Não publicado"))
+        badge = f"🟢 ML: {ext}" if ext else "⚪ só local"
+        with st.expander(f"{icon} {p['title']}  —  R$ {p.get('price') or 0:.2f}  ·  estoque {p.get('available_quantity') if p.get('available_quantity') is not None else '—'}"):
+            st.markdown(f"**Situação no ML:** {icon} {label} · {badge} · ID local: {p['id']}")
 
             with st.form(f"edit_form_{p['id']}"):
                 c1, c2, c3 = st.columns(3)
@@ -160,3 +177,30 @@ def render(api_url: str, headers: dict, current_user: dict) -> None:
                             st.error(f"Erro de conexão: {e}")
             else:
                 st.caption("🔒 Exclusão disponível apenas para usuários **admin**.")
+
+    # Métricas no topo
+    m1, m2, m3 = st.columns(3)
+    m1.metric("📦 Total de anúncios", len(ml_products))
+    m2.metric("🟢 Ativos na plataforma", len(ativos))
+    m3.metric("⚪ Não ativos", len(inativos))
+
+    sub_ativos, sub_inativos = st.tabs([
+        f"🟢 Ativos no Mercado Livre ({len(ativos)})",
+        f"⚪ Não ativos / Não publicados ({len(inativos)})",
+    ])
+
+    with sub_ativos:
+        if not ativos:
+            st.info("Nenhum anúncio ativo no Mercado Livre no momento.")
+        else:
+            st.caption("Anúncios publicados e com status **ativo** no Mercado Livre (visíveis e vendendo).")
+            for p in ativos:
+                render_product(p)
+
+    with sub_inativos:
+        if not inativos:
+            st.info("Nenhum anúncio inativo. Tudo publicado e ativo! 🎉")
+        else:
+            st.caption("Anúncios **pausados, encerrados, em revisão** ou ainda **não publicados** (só locais).")
+            for p in inativos:
+                render_product(p)
