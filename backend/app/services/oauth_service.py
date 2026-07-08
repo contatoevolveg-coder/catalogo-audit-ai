@@ -1,4 +1,7 @@
 import uuid
+import hashlib
+import base64
+import secrets
 import datetime
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
@@ -12,27 +15,47 @@ from backend.app.config import (
 from backend.app.security.crypto import encrypt_secret, decrypt_secret
 from backend.app.integrations import mercado_livre, bling, shopee
 
+
+def _generate_pkce_pair() -> tuple:
+    """Gera (code_verifier, code_challenge) para o fluxo PKCE (S256).
+
+    code_verifier: string aleatória URL-safe (43-128 chars).
+    code_challenge: BASE64URL(SHA256(code_verifier)) sem padding.
+    """
+    code_verifier = secrets.token_urlsafe(64)  # ~86 chars, dentro do limite
+    digest = hashlib.sha256(code_verifier.encode("ascii")).digest()
+    code_challenge = base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
+    return code_verifier, code_challenge
+
+
 def start_authorization(provider: str, db: Session, tenant_id: int) -> str:
     """Inicia o fluxo OAuth2 gerando um 'state' e a URL de autorização."""
     if provider not in ["mercado_livre", "bling", "shopee"]:
         raise HTTPException(status_code=400, detail="Provedor inválido")
-        
+
     state_val = str(uuid.uuid4())
-    db_state = OAuthState(tenant_id=tenant_id, state=state_val, provider=provider)
-    db.add(db_state)
-    db.commit()
-    
+
     if provider == "mercado_livre":
         if not ML_CLIENT_ID:
             raise HTTPException(status_code=500, detail="ML_CLIENT_ID não configurado")
+        # Gera par PKCE e guarda o verifier no state para uso no callback
+        code_verifier, code_challenge = _generate_pkce_pair()
+        db_state = OAuthState(tenant_id=tenant_id, state=state_val, provider=provider, code_verifier=code_verifier)
+        db.add(db_state)
+        db.commit()
         redirect_uri = f"{OAUTH_REDIRECT_BASE_URL}/oauth/mercado_livre/callback"
-        return mercado_livre.build_authorization_url(ML_CLIENT_ID, redirect_uri, state_val)
-        
-    elif provider == "bling":
+        return mercado_livre.build_authorization_url(ML_CLIENT_ID, redirect_uri, state_val, code_challenge=code_challenge)
+
+    # Demais provedores (sem PKCE)
+    db_state = OAuthState(tenant_id=tenant_id, state=state_val, provider=provider)
+    db.add(db_state)
+    db.commit()
+
+    if provider == "bling":
         if not BLING_CLIENT_ID:
             raise HTTPException(status_code=500, detail="BLING_CLIENT_ID não configurado")
         return bling.build_authorization_url(BLING_CLIENT_ID, state_val)
-        
+
     elif provider == "shopee":
         if not SHOPEE_PARTNER_ID or not SHOPEE_PARTNER_KEY:
             raise HTTPException(status_code=500, detail="Credenciais da Shopee não configuradas")
@@ -63,15 +86,16 @@ def handle_callback(provider: str, code: str, state: str, label: str, db: Sessio
         raise HTTPException(status_code=400, detail="State expirado")
 
     tenant_id = db_state.tenant_id
-    
+    code_verifier = db_state.code_verifier  # PKCE (None para provedores sem PKCE)
+
     # Troca de código por token
     success = False
     body = {}
-    
+
     if provider == "mercado_livre":
         redirect_uri = f"{OAUTH_REDIRECT_BASE_URL}/oauth/mercado_livre/callback"
         success, body = mercado_livre.exchange_code_for_token(
-            ML_CLIENT_ID, ML_CLIENT_SECRET, code, redirect_uri
+            ML_CLIENT_ID, ML_CLIENT_SECRET, code, redirect_uri, code_verifier=code_verifier
         )
         provider_type = "marketplace"
     elif provider == "bling":

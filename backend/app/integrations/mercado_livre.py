@@ -316,13 +316,32 @@ def submit_answer(access_token: str, question_id: str, text: str) -> Tuple[bool,
         return (False, {"error": f"Erro inesperado ao enviar resposta: {str(e)}"})
 
 
-def build_authorization_url(client_id: str, redirect_uri: str, state: str) -> str:
-    """Constrói a URL de autorização OAuth2 para o Mercado Livre."""
-    return f"https://auth.mercadolivre.com.br/authorization?response_type=code&client_id={client_id}&redirect_uri={redirect_uri}&state={state}"
+def build_authorization_url(client_id: str, redirect_uri: str, state: str, code_challenge: Optional[str] = None) -> str:
+    """Constrói a URL de autorização OAuth2 para o Mercado Livre.
+
+    Quando code_challenge é fornecido, inclui os parâmetros PKCE (S256), exigidos
+    por apps do Mercado Livre com PKCE obrigatório.
+    """
+    url = (
+        f"https://auth.mercadolivre.com.br/authorization?response_type=code"
+        f"&client_id={client_id}&redirect_uri={redirect_uri}&state={state}"
+    )
+    if code_challenge:
+        url += f"&code_challenge={code_challenge}&code_challenge_method=S256"
+    return url
 
 
-def exchange_code_for_token(client_id: str, client_secret: str, code: str, redirect_uri: str) -> Tuple[bool, dict]:
-    """Troca o authorization code por tokens no Mercado Livre."""
+def exchange_code_for_token(
+    client_id: str,
+    client_secret: str,
+    code: str,
+    redirect_uri: str,
+    code_verifier: Optional[str] = None,
+) -> Tuple[bool, dict]:
+    """Troca o authorization code por tokens no Mercado Livre.
+
+    Envia code_verifier quando fornecido (fluxo PKCE).
+    """
     url = "https://api.mercadolibre.com/oauth/token"
     headers = {
         "Content-Type": "application/x-www-form-urlencoded",
@@ -335,7 +354,9 @@ def exchange_code_for_token(client_id: str, client_secret: str, code: str, redir
         "code": code,
         "redirect_uri": redirect_uri
     }
-    
+    if code_verifier:
+        data["code_verifier"] = code_verifier
+
     try:
         response = httpx.post(url, headers=headers, data=data, timeout=10.0)
         body = response.json()

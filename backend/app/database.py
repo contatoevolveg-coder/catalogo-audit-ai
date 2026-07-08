@@ -248,6 +248,7 @@ class OAuthState(Base):
     tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
     state = Column(String, unique=True, index=True, nullable=False)
     provider = Column(String, nullable=False, index=True)
+    code_verifier = Column(String, nullable=True)  # PKCE: guardado entre authorize e callback
     created_at = Column(DateTime, default=_utcnow, nullable=False)
 
 
