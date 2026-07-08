@@ -3,7 +3,7 @@ import json
 import logging
 from datetime import datetime, timezone
 from contextlib import asynccontextmanager
-from typing import List
+from typing import List, Optional
 
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,11 +16,12 @@ from backend.app.database import init_db, get_db, Product, Suggestion, AuditLog,
 from backend.app.agent import audit_product_with_gemini
 from backend.app.schemas import (
     ProductCreate, ProductResponse, SuggestionResponse, AuditLogResponse, SchedulerRunResponse, AlertResponse,
-    ApproveSuggestionRequest, FeedbackStatsResponse
+    ApproveSuggestionRequest, FeedbackStatsResponse, ProductUpdateRequest, ProductDeleteRequest
 )
 from backend.app.routers import imports, credentials, marketplace_publish, erp_bling, auth, customer_questions, oauth, orders
 from backend.app.services.audit_service import perform_product_audit
-from backend.app.security.dependencies import get_current_user, get_current_tenant
+from backend.app.services.marketplace_manage_service import update_product as svc_update_product, delete_product as svc_delete_product
+from backend.app.security.dependencies import get_current_user, get_current_tenant, require_admin
 
 
 
@@ -118,6 +119,43 @@ def create_product(product: ProductCreate, db: Session = Depends(get_db), tenant
     db.commit()
     db.refresh(db_product)
     return db_product
+
+@app.put("/products/{product_id}", response_model=ProductResponse)
+def update_product_endpoint(
+    product_id: int,
+    data: ProductUpdateRequest,
+    db: Session = Depends(get_db),
+    tenant_id: int = Depends(get_current_tenant)
+):
+    """Edita um anúncio (produto). Se sync_to_ml=True e o produto estiver publicado,
+    replica a alteração no Mercado Livre. Disponível para admin e analista."""
+    changes = data.model_dump(exclude={"sync_to_ml", "credential_id"}, exclude_none=True)
+    return svc_update_product(
+        product_id=product_id,
+        tenant_id=tenant_id,
+        db=db,
+        changes=changes,
+        credential_id=data.credential_id,
+        sync_to_ml=data.sync_to_ml,
+    )
+
+@app.delete("/products/{product_id}")
+def delete_product_endpoint(
+    product_id: int,
+    credential_id: Optional[int] = None,
+    close_on_marketplace: bool = True,
+    db: Session = Depends(get_db),
+    admin_user: User = Depends(require_admin)
+):
+    """Exclui um anúncio (produto). Operação RESTRITA a usuários 'admin'.
+    Se o produto estiver publicado no ML e houver credencial, encerra o anúncio lá também."""
+    return svc_delete_product(
+        product_id=product_id,
+        tenant_id=admin_user.tenant_id,
+        db=db,
+        credential_id=credential_id,
+        close_on_marketplace=close_on_marketplace,
+    )
 
 @app.post("/products/import-test-listings")
 def import_test_listings(db: Session = Depends(get_db), tenant_id: int = Depends(get_current_tenant)):
@@ -392,8 +430,6 @@ def get_scheduler_status(db: Session = Depends(get_db), current_user: User = Dep
 # Endpoints de Alertas do Sistema
 # -------------------------------------------------------------
 
-from typing import Optional
-
 @app.get("/alerts", response_model=List[AlertResponse])
 def list_alerts(is_read: Optional[bool] = None, db: Session = Depends(get_db), tenant_id: int = Depends(get_current_tenant)):
     """Lista os alertas do sistema com filtro opcional por status de leitura."""
@@ -414,8 +450,8 @@ def mark_alert_as_read(alert_id: int, db: Session = Depends(get_db), tenant_id: 
     return alert
 
 @app.post("/alerts/trigger")
-def trigger_alert_generation(db: Session = Depends(get_db)):
-    """Executa manualmente a verificação e geração de alertas para todos os tenants."""
+def trigger_alert_generation(db: Session = Depends(get_db), tenant_id: int = Depends(get_current_tenant)):
+    """Executa manualmente a verificação e geração de alertas para a organização do usuário."""
     from backend.app.services.alert_service import check_and_generate_alerts
-    created = check_and_generate_alerts(db)
+    created = check_and_generate_alerts(db, tenant_id)
     return {"message": f"Verificação de alertas concluída. {created} alertas recém-criados.", "created": created}

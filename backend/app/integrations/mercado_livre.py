@@ -134,6 +134,86 @@ def publish_item(access_token: str, payload: dict) -> Tuple[bool, dict]:
     return (False, {"error": "Limite de retentativas (429) excedido."})
 
 
+def update_item(access_token: str, item_id: str, changes: dict) -> Tuple[bool, dict]:
+    """Atualiza um anúncio existente no Mercado Livre (PUT /items/{item_id}).
+
+    `changes` pode conter: title, price, available_quantity, status ('active'/'paused'/'closed'),
+    pictures, attributes, etc. Retorna (sucesso, corpo_resposta).
+    Aplica backoff exponencial em caso de HTTP 429.
+    """
+    url = f"https://api.mercadolibre.com/items/{item_id}"
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json"
+    }
+
+    max_retries = 3
+    initial_delay = 1.0
+    backoff_factor = 2.0
+
+    for attempt in range(max_retries):
+        try:
+            response = httpx.put(url, headers=headers, json=changes, timeout=10.0)
+            status_code = response.status_code
+
+            if status_code == 429 and attempt < max_retries - 1:
+                time.sleep(initial_delay * (backoff_factor ** attempt))
+                continue
+
+            try:
+                body = response.json()
+            except Exception:
+                body = {"detail": response.text}
+
+            return (status_code == 200, body)
+
+        except httpx.RequestError as e:
+            return (False, {"error": f"Erro de rede: {str(e)}"})
+        except Exception as e:
+            return (False, {"error": f"Erro inesperado: {str(e)}"})
+
+    return (False, {"error": "Limite de retentativas (429) excedido."})
+
+
+def update_item_description(access_token: str, item_id: str, description_text: str) -> Tuple[bool, dict]:
+    """Atualiza a descrição de um anúncio já existente (PUT /items/{item_id}/description)."""
+    url = f"https://api.mercadolibre.com/items/{item_id}/description"
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json"
+    }
+    payload = {"plain_text": description_text}
+    try:
+        response = httpx.put(url, headers=headers, json=payload, timeout=10.0)
+        try:
+            body = response.json()
+        except Exception:
+            body = {"detail": response.text}
+        return (response.status_code in [200, 201], body)
+    except Exception as e:
+        return (False, {"error": f"Erro inesperado ao atualizar descrição: {str(e)}"})
+
+
+def close_item(access_token: str, item_id: str) -> Tuple[bool, dict]:
+    """Encerra um anúncio no Mercado Livre (status -> 'closed').
+
+    Pré-requisito obrigatório antes de excluir definitivamente.
+    """
+    return update_item(access_token, item_id, {"status": "closed"})
+
+
+def delete_item(access_token: str, item_id: str) -> Tuple[bool, dict]:
+    """Exclui (marca como deletado) um anúncio no Mercado Livre.
+
+    O ML exige que o item esteja 'closed' antes; esta função encerra e então
+    marca deleted=true (PUT /items/{item_id} {"deleted": true}).
+    """
+    # Passo 1: encerrar (ignora erro se já estiver fechado)
+    close_item(access_token, item_id)
+    # Passo 2: marcar como deletado
+    return update_item(access_token, item_id, {"deleted": "true"})
+
+
 def publish_item_description(access_token: str, item_id: str, description_text: str) -> Tuple[bool, dict]:
     """Cadastra a descrição de um item criado no Mercado Livre.
 

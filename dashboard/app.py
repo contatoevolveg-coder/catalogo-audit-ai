@@ -5,7 +5,7 @@ import pandas as pd
 from datetime import datetime
 # No Streamlit Cloud, a pasta do script (dashboard/) é que entra no sys.path —
 # não a raiz do repo. Por isso importamos "tabs" direto, sem o prefixo "dashboard.".
-from tabs import imports_tab, credentials_tab, marketplace_publish_tab, erp_sync_tab, alerts_tab, orders_tab
+from tabs import imports_tab, credentials_tab, marketplace_publish_tab, erp_sync_tab, alerts_tab, orders_tab, listings_tab, users_tab
 
 
 # Configuração da página Streamlit
@@ -333,13 +333,16 @@ except Exception:
 alert_tab_label = f"🔔 Alertas ({unread_alerts_count})" if unread_alerts_count > 0 else "🔔 Alertas"
 
 # Cria abas principais no dashboard
-tab_catalogo, tab_cadastro, tab_credentials, tab_publish, tab_sync, tab_orders, tab_logs, tab_alerts = st.tabs([
-    "📋 Catálogo & Auditoria", 
-    "📥 Cadastro em Massa", 
-    "🔑 Credenciais", 
-    "🛒 Publicação ML", 
-    "🔗 Sincronização Bling", 
+(tab_catalogo, tab_listings, tab_cadastro, tab_credentials, tab_publish,
+ tab_sync, tab_orders, tab_users, tab_logs, tab_alerts) = st.tabs([
+    "📋 Catálogo & Auditoria",
+    "🛒 Anúncios ML",
+    "📥 Cadastro em Massa",
+    "🔑 Credenciais",
+    "🚀 Publicação ML",
+    "🔗 Sincronização Bling",
     "📦 Pedidos",
+    "👥 Usuários",
     "📊 Logs de Custos & Tokens",
     alert_tab_label
 ])
@@ -607,6 +610,12 @@ with tab_catalogo:
 # -------------------------------------------------------------
 # ABA: Cadastro em Massa
 # -------------------------------------------------------------
+with tab_listings:
+    listings_tab.render(API_URL, admin_headers, current_user)
+
+with tab_users:
+    users_tab.render(API_URL, admin_headers, current_user)
+
 with tab_cadastro:
     imports_tab.render(API_URL, admin_headers)
 

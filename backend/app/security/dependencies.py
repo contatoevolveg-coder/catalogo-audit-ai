@@ -57,7 +57,7 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
 
 def get_current_tenant(current_user: User = Depends(get_current_user)) -> int:
     """Extrai o ID do tenant (lojista) ao qual o usuário logado pertence.
-    
+
     Usado para isolar queries (Multi-Tenant).
     """
     if current_user.tenant_id is None:
@@ -66,3 +66,17 @@ def get_current_tenant(current_user: User = Depends(get_current_user)) -> int:
             detail="Usuário não vinculado a nenhuma organização/tenant."
         )
     return current_user.tenant_id
+
+
+def require_admin(current_user: User = Depends(get_current_user)) -> User:
+    """Dependência que exige o papel 'admin'.
+
+    Usada para operações sensíveis como excluir anúncios ou gerenciar usuários.
+    Analistas (role='analista') recebem 403.
+    """
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Ação restrita: apenas usuários com papel 'admin' podem executá-la."
+        )
+    return current_user

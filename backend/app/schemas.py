@@ -279,11 +279,38 @@ class UserResponse(BaseModel):
     id: int
     username: str
     role: str
+    is_active: bool = True
     created_at: datetime
+
+class UserCreateRequest(BaseModel):
+    username: str = Field(min_length=3, max_length=150, description="Nome de usuário do novo operador/cliente")
+    password: str = Field(min_length=6, max_length=128, description="Senha de acesso")
+    role: Literal["admin", "analista"] = Field(default="analista", description="Papel: 'admin' (pode excluir) ou 'analista' (não pode excluir)")
 
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+
+# -------------------------------------------------------------
+# Esquemas para Gestão de Anúncios (CRUD de produtos)
+# -------------------------------------------------------------
+
+class ProductUpdateRequest(BaseModel):
+    title: Optional[str] = Field(default=None, max_length=300)
+    description: Optional[str] = Field(default=None, max_length=10000)
+    price: Optional[float] = Field(default=None, ge=0)
+    available_quantity: Optional[int] = Field(default=None, ge=0)
+    category: Optional[str] = Field(default=None, max_length=300)
+    condition: Optional[str] = Field(default=None)
+    images: Optional[List[str]] = Field(default=None)
+    attributes: Optional[Dict[str, Any]] = Field(default=None)
+    sync_to_ml: bool = Field(default=False, description="Se True, replica a edição no anúncio do Mercado Livre")
+    credential_id: Optional[int] = Field(default=None, description="Credencial ML usada quando sync_to_ml=True")
+
+class ProductDeleteRequest(BaseModel):
+    credential_id: Optional[int] = Field(default=None, description="Credencial ML para encerrar o anúncio no marketplace")
+    close_on_marketplace: bool = Field(default=True, description="Se True, encerra/exclui o anúncio no Mercado Livre também")
 
 
 # -------------------------------------------------------------

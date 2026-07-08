@@ -4,11 +4,12 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from datetime import datetime, timezone
 
+from typing import List
 from backend.app import config
 from backend.app.database import get_db, User, Tenant
-from backend.app.schemas import UserRegisterRequest, UserResponse, TokenResponse
+from backend.app.schemas import UserRegisterRequest, UserResponse, TokenResponse, UserCreateRequest
 from backend.app.security.auth import hash_password, verify_password, create_access_token
-from backend.app.security.dependencies import get_current_user
+from backend.app.security.dependencies import get_current_user, get_current_tenant, require_admin
 from backend.app.security.rate_limit import get_client_ip, is_locked_out, record_attempt
 
 router = APIRouter(
@@ -149,4 +150,74 @@ def get_current_user_profile(
 ):
     """Retorna os dados cadastrais do usuário atualmente autenticado via JWT."""
     return current_user
+
+
+@router.get(
+    "/users",
+    response_model=List[UserResponse]
+)
+def list_tenant_users(
+    db: Session = Depends(get_db),
+    tenant_id: int = Depends(get_current_tenant)
+):
+    """Lista os usuários (operadores/clientes) da mesma organização/tenant."""
+    return db.query(User).filter(User.tenant_id == tenant_id).order_by(User.id.asc()).all()
+
+
+@router.post(
+    "/users",
+    response_model=UserResponse,
+    status_code=status.HTTP_201_CREATED
+)
+def create_tenant_user(
+    data: UserCreateRequest,
+    db: Session = Depends(get_db),
+    admin_user: User = Depends(require_admin)
+):
+    """Cadastra um novo usuário/operador dentro da organização do admin logado.
+
+    Diferente de /auth/register (bootstrap com X-Admin-Key), este endpoint é o
+    usado pelo próprio dashboard: um admin cria operadores no seu tenant, sem
+    precisar da chave de bootstrap. O novo usuário herda o tenant do admin.
+    """
+    existing = db.query(User).filter(User.username == data.username).first()
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Já existe um usuário com este username."
+        )
+
+    new_user = User(
+        username=data.username,
+        hashed_password=hash_password(data.password),
+        role=data.role,
+        is_active=True,
+        tenant_id=admin_user.tenant_id
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    return new_user
+
+
+@router.delete(
+    "/users/{user_id}",
+    status_code=status.HTTP_200_OK
+)
+def delete_tenant_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    admin_user: User = Depends(require_admin)
+):
+    """Remove um usuário da organização (apenas admins; não pode remover a si mesmo)."""
+    if user_id == admin_user.id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Você não pode remover a si mesmo.")
+
+    target = db.query(User).filter(User.id == user_id, User.tenant_id == admin_user.tenant_id).first()
+    if not target:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuário não encontrado nesta organização.")
+
+    db.delete(target)
+    db.commit()
+    return {"message": f"Usuário '{target.username}' removido com sucesso."}
 

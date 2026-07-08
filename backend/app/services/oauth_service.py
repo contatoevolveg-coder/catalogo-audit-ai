@@ -18,7 +18,7 @@ def start_authorization(provider: str, db: Session, tenant_id: int) -> str:
         raise HTTPException(status_code=400, detail="Provedor inválido")
         
     state_val = str(uuid.uuid4())
-    db_state = OAuthState(state=state_val, provider=provider)
+    db_state = OAuthState(tenant_id=tenant_id, state=state_val, provider=provider)
     db.add(db_state)
     db.commit()
     
@@ -39,22 +39,29 @@ def start_authorization(provider: str, db: Session, tenant_id: int) -> str:
         redirect_uri = f"{OAUTH_REDIRECT_BASE_URL}/oauth/shopee/callback"
         return shopee.build_authorization_url(SHOPEE_PARTNER_ID, SHOPEE_PARTNER_KEY, redirect_uri)
 
-def handle_callback(provider: str, code: str, state: str, label: str, db: Session, tenant_id: int, shop_id: int = None) -> Credential:
-    """Processa o callback OAuth2, validando o state e trocando o código pelo token."""
+def handle_callback(provider: str, code: str, state: str, label: str, db: Session, shop_id: int = None) -> Credential:
+    """Processa o callback OAuth2, validando o state e trocando o código pelo token.
+
+    O tenant dono da credencial é o mesmo que iniciou o fluxo em start_authorization
+    (recuperado do próprio registro de state) — não depende de um Bearer token na
+    requisição de callback, já que o navegador é redirecionado diretamente pelo
+    provedor (ML/Bling/Shopee) sem carregar nosso token de sessão.
+    """
     db_state = db.query(OAuthState).filter(OAuthState.state == state).first()
     if not db_state:
         raise HTTPException(status_code=400, detail="State inválido ou expirado")
-        
+
     if db_state.provider != provider:
         raise HTTPException(status_code=400, detail="State não corresponde ao provedor")
-        
+
     # Verificar se expirou (ex: 10 minutos)
     time_diff = datetime.datetime.utcnow() - db_state.created_at
     if time_diff.total_seconds() > 600:
         db.delete(db_state)
         db.commit()
         raise HTTPException(status_code=400, detail="State expirado")
-        
+
+    tenant_id = db_state.tenant_id
     db.delete(db_state)
     db.commit()
     

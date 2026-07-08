@@ -245,6 +245,7 @@ class OAuthState(Base):
     __tablename__ = "oauth_states"
 
     id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
     state = Column(String, unique=True, index=True, nullable=False)
     provider = Column(String, nullable=False, index=True)
     created_at = Column(DateTime, default=_utcnow, nullable=False)
