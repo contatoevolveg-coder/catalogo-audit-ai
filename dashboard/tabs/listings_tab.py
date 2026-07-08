@@ -107,6 +107,12 @@ def render(api_url: str, headers: dict, current_user: dict) -> None:
     ativos = [p for p in ml_products if p.get("marketplace_status") == "active"]
     inativos = [p for p in ml_products if p.get("marketplace_status") != "active"]
 
+    # Dentro dos ativos: com estoque x esgotados (ativo mas sem estoque)
+    def _tem_estoque(p):
+        return (p.get("available_quantity") or 0) > 0
+    ativos_com_estoque = [p for p in ativos if _tem_estoque(p)]
+    ativos_sem_estoque = [p for p in ativos if not _tem_estoque(p)]
+
     STATUS_LABELS = {
         "active": ("🟢", "Ativo"),
         "paused": ("🟡", "Pausado"),
@@ -179,10 +185,11 @@ def render(api_url: str, headers: dict, current_user: dict) -> None:
                 st.caption("🔒 Exclusão disponível apenas para usuários **admin**.")
 
     # Métricas no topo
-    m1, m2, m3 = st.columns(3)
+    m1, m2, m3, m4 = st.columns(4)
     m1.metric("📦 Total de anúncios", len(ml_products))
-    m2.metric("🟢 Ativos na plataforma", len(ativos))
-    m3.metric("⚪ Não ativos", len(inativos))
+    m2.metric("🟢 Ativos c/ estoque", len(ativos_com_estoque))
+    m3.metric("🚫 Ativos esgotados", len(ativos_sem_estoque))
+    m4.metric("⚪ Não ativos", len(inativos))
 
     sub_ativos, sub_inativos = st.tabs([
         f"🟢 Ativos no Mercado Livre ({len(ativos)})",
@@ -193,9 +200,30 @@ def render(api_url: str, headers: dict, current_user: dict) -> None:
         if not ativos:
             st.info("Nenhum anúncio ativo no Mercado Livre no momento.")
         else:
-            st.caption("Anúncios publicados e com status **ativo** no Mercado Livre (visíveis e vendendo).")
-            for p in ativos:
-                render_product(p)
+            if ativos_sem_estoque:
+                st.warning(
+                    f"⚠️ {len(ativos_sem_estoque)} anúncio(s) estão **ativos mas sem estoque** — "
+                    "isso prejudica sua reputação e ranqueamento no Mercado Livre. Reponha o estoque ou pause-os."
+                )
+
+            g_com, g_sem = st.tabs([
+                f"✅ Com estoque ({len(ativos_com_estoque)})",
+                f"🚫 Esgotados ({len(ativos_sem_estoque)})",
+            ])
+            with g_com:
+                if not ativos_com_estoque:
+                    st.info("Nenhum anúncio ativo com estoque.")
+                else:
+                    st.caption("Anúncios **ativos e com estoque disponível** — prontos para vender.")
+                    for p in ativos_com_estoque:
+                        render_product(p)
+            with g_sem:
+                if not ativos_sem_estoque:
+                    st.success("Nenhum anúncio ativo esgotado. 🎉")
+                else:
+                    st.caption("Anúncios **ativos porém com estoque zerado** — precisam de reposição urgente.")
+                    for p in ativos_sem_estoque:
+                        render_product(p)
 
     with sub_inativos:
         if not inativos:
