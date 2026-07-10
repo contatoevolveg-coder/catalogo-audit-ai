@@ -72,6 +72,17 @@ def handle_callback(provider: str, code: str, state: str, label: str, db: Sessio
     """
     state = state.strip() if state else state
     db_state = db.query(OAuthState).filter(OAuthState.state == state).first()
+    if not db_state and provider == "bling":
+        # O Bling substitui o state por um valor interno próprio (comportamento não-padrão).
+        # Fallback: usa o OAuthState de bling mais recente não expirado.
+        import datetime as _dt
+        cutoff = _dt.datetime.utcnow() - _dt.timedelta(seconds=1800)
+        db_state = (
+            db.query(OAuthState)
+            .filter(OAuthState.provider == "bling", OAuthState.created_at >= cutoff)
+            .order_by(OAuthState.created_at.desc())
+            .first()
+        )
     if not db_state:
         raise HTTPException(status_code=400, detail="State inválido ou expirado")
 
