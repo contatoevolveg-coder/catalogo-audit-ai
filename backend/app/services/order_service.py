@@ -65,7 +65,9 @@ def sync_ml_orders_for_credential(db: Session, credential: Credential, tenant_id
                 db.add(db_order)
                 db.flush() # To get db_order.id
                 is_new = True
-                
+                new_items = []  # itens recém-criados: a sessão tem autoflush=False, então uma
+                                 # query por OrderItem.order_id logo em seguida não os enxergaria.
+
                 # Insert Items
                 order_items_data = ml_order.get("order_items", [])
                 for item_data in order_items_data:
@@ -92,6 +94,7 @@ def sync_ml_orders_for_credential(db: Session, credential: Credential, tenant_id
                         unit_price=unit_price
                     )
                     db.add(db_item)
+                    new_items.append(db_item)
             else:
                 # Update existing order
                 db_order.status = status
@@ -99,7 +102,7 @@ def sync_ml_orders_for_credential(db: Session, credential: Credential, tenant_id
 
             # Deduce stock if paid/confirmed and not already deducted
             if db_order.status in ["paid", "confirmed"] and not db_order.stock_deducted:
-                items = db_order.items if not is_new else db.query(OrderItem).filter(OrderItem.order_id == db_order.id).all()
+                items = new_items if is_new else db_order.items
                 deducted_any = False
                 for item in items:
                     if item.product_id:

@@ -78,6 +78,7 @@ def test_link_erp_sku(client):
     """Garante o vínculo de SKU ao produto local via PATCH."""
     db = TestingSessionLocal()
     product = Product(
+        tenant_id=1,
         title="Teclado Mecânico Gamer",
         marketplace="mercado_livre",
         status="pending"
@@ -109,6 +110,7 @@ def test_sync_stock_success(client, monkeypatch):
     """Garante sincronização com sucesso buscando o produto no Bling por SKU e depois seu estoque."""
     db = TestingSessionLocal()
     product = Product(
+        tenant_id=1,
         title="Fone Bluetooth",
         marketplace="mercado_livre",
         status="pending",
@@ -125,7 +127,7 @@ def test_sync_stock_success(client, monkeypatch):
         label="Bling Principal",
         secret_payload={"access_token": "MY-BLING-BEARER-TOKEN-777"},
         scopes=["read_products"]
-    ))
+    ), tenant_id=1)
     cred.status = "valid"
     db.commit()
     db.refresh(cred)
@@ -196,6 +198,7 @@ def test_sync_stock_blocked_by_missing_sku(client):
     """Garante bloqueio 400 antes de acionar chamada externa caso o SKU não esteja vinculado."""
     db = TestingSessionLocal()
     product = Product(
+        tenant_id=1,
         title="Fone Sem SKU",
         marketplace="mercado_livre",
         status="pending",
@@ -210,7 +213,7 @@ def test_sync_stock_blocked_by_missing_sku(client):
         label="Bling",
         secret_payload={"access_token": "token"},
         scopes=["read_products"]
-    ))
+    ), tenant_id=1)
     cred.status = "valid"
     db.commit()
     
@@ -232,6 +235,7 @@ def test_sync_stock_sku_not_found_on_bling(client, monkeypatch):
     """Garante gravação do status 'not_found' caso o SKU não exista no Bling."""
     db = TestingSessionLocal()
     product = Product(
+        tenant_id=1,
         title="Item Raro",
         marketplace="mercado_livre",
         status="pending",
@@ -246,7 +250,7 @@ def test_sync_stock_sku_not_found_on_bling(client, monkeypatch):
         label="Bling",
         secret_payload={"access_token": "MY-TOKEN"},
         scopes=["read_products"]
-    ))
+    ), tenant_id=1)
     cred.status = "valid"
     db.commit()
     
@@ -283,6 +287,7 @@ def test_sync_stock_token_expired_401(client, monkeypatch):
     """Garante que erro 401 do Bling muda credencial para 'expired' no banco e retorna 502."""
     db = TestingSessionLocal()
     product = Product(
+        tenant_id=1,
         title="Item",
         marketplace="mercado_livre",
         status="pending",
@@ -297,7 +302,7 @@ def test_sync_stock_token_expired_401(client, monkeypatch):
         label="Bling",
         secret_payload={"access_token": "MY-EXPIRED-TOKEN-BLING"},
         scopes=["read_products"]
-    ))
+    ), tenant_id=1)
     cred.status = "valid"
     db.commit()
     
@@ -339,6 +344,7 @@ def test_bulk_sync_cap_limit(client, monkeypatch):
     # Cria 3 produtos com erp_sku vinculados
     for i in range(1, 4):
         p = Product(
+            tenant_id=1,
             title=f"Prod {i}",
             marketplace="mercado_livre",
             status="pending",
@@ -353,7 +359,7 @@ def test_bulk_sync_cap_limit(client, monkeypatch):
         label="Bling",
         secret_payload={"access_token": "token"},
         scopes=["read_products"]
-    ))
+    ), tenant_id=1)
     cred.status = "valid"
     db.commit()
     cred_id = cred.id
@@ -387,9 +393,9 @@ def test_bulk_sync_resilience(client, monkeypatch):
     """Garante que falhas individuais (ex.: exceção de rede) em um produto não param o processamento dos demais."""
     db = TestingSessionLocal()
     
-    p1 = Product(title="P1", marketplace="mercado_livre", status="pending", erp_sku="SKU-OK-1")
-    p2 = Product(title="P2", marketplace="mercado_livre", status="pending", erp_sku="SKU-FAIL")
-    p3 = Product(title="P3", marketplace="mercado_livre", status="pending", erp_sku="SKU-OK-2")
+    p1 = Product(tenant_id=1, title="P1", marketplace="mercado_livre", status="pending", erp_sku="SKU-OK-1")
+    p2 = Product(tenant_id=1, title="P2", marketplace="mercado_livre", status="pending", erp_sku="SKU-FAIL")
+    p3 = Product(tenant_id=1, title="P3", marketplace="mercado_livre", status="pending", erp_sku="SKU-OK-2")
     db.add_all([p1, p2, p3])
     
     cred = credential_service.create_credential(db, CredentialCreate(
@@ -398,7 +404,7 @@ def test_bulk_sync_resilience(client, monkeypatch):
         label="Bling",
         secret_payload={"access_token": "token"},
         scopes=["read_products"]
-    ))
+    ), tenant_id=1)
     cred.status = "valid"
     db.commit()
     

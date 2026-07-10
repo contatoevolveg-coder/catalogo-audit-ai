@@ -134,11 +134,12 @@ def test_sync_questions_success(client, mock_questions_api):
         label="ML Teste",
         secret_payload={"access_token": "ACCESS-TOKEN-ML-1234"},
         scopes=["read_products"]
-    ))
+    ), tenant_id=1)
     cred.status = "valid"
     
     # Cria produto correspondente ao MLB001
     prod = Product(
+        tenant_id=1,
         title="Celular de Teste",
         description="Celular 128GB.",
         price=1200.0,
@@ -190,7 +191,7 @@ def test_sync_questions_respects_max_fetch(client, mock_questions_api):
         label="ML Teste",
         secret_payload={"access_token": "ACCESS-TOKEN-ML-1234"},
         scopes=["read_products"]
-    ))
+    ), tenant_id=1)
     cred.status = "valid"
     db.commit()
     cred_id = cred.id
@@ -217,7 +218,7 @@ def test_draft_answer_generation(client, mock_questions_api):
         label="ML Teste",
         secret_payload={"access_token": "TOKEN-ML"},
         scopes=["read_products"]
-    ))
+    ), tenant_id=1)
     cred.status = "valid"
     db.commit()
     cred_id = cred.id
@@ -261,7 +262,7 @@ def test_send_answer_errors_and_success(client, mock_questions_api, monkeypatch)
         label="ML Teste",
         secret_payload={"access_token": "MY-SECRET-ML-TOKEN"},
         scopes=["read_products"]
-    ))
+    ), tenant_id=1)
     cred.status = "valid"
     db.commit()
     cred_id = cred.id
@@ -341,7 +342,7 @@ def test_dismiss_question(client, mock_questions_api, monkeypatch):
         label="ML Teste",
         secret_payload={"access_token": "TOKEN"},
         scopes=["read_products"]
-    ))
+    ), tenant_id=1)
     cred.status = "valid"
     db.commit()
     cred_id = cred.id

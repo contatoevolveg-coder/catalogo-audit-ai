@@ -261,7 +261,7 @@ class CustomerQuestion(Base):
     credential_id = Column(Integer, ForeignKey("credentials.id"), nullable=False, index=True)
     ml_question_id = Column(String, unique=True, index=True, nullable=False)
     item_id = Column(String, index=True, nullable=False)
-    matched_product_id = Column(Integer, ForeignKey("products.id", ondelete="SET NULL"), nullable=True)
+    matched_product_id = Column(Integer, ForeignKey("products.id", ondelete="SET NULL"), nullable=True, index=True)
     question_text = Column(Text, nullable=False)
     asker_nickname = Column(String, nullable=True)
     status = Column(String, default="pending_draft", index=True, nullable=False)  # pending_draft | draft_ready | approved_sent | error | dismissed

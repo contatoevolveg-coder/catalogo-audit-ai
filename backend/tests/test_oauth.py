@@ -69,7 +69,7 @@ def test_callback_success(client, auth_headers):
     db = TestingSessionLocal()
     # 1. Cria o State
     state_val = "test_state_123"
-    db_state = OAuthState(state=state_val, provider="bling")
+    db_state = OAuthState(tenant_id=1, state=state_val, provider="bling")
     db.add(db_state)
     db.commit()
 
@@ -133,6 +133,7 @@ def test_refresh_if_needed_not_needed():
     # Expira daqui a 2 horas (muito além de 5 minutos)
     future = datetime.datetime.utcnow() + datetime.timedelta(hours=2)
     cred = Credential(
+        tenant_id=1,
         provider="mercado_livre",
         provider_type="marketplace",
         label="Test ML",
@@ -166,6 +167,7 @@ def test_refresh_if_needed_triggers_refresh():
     encrypted = encrypt_secret(secret_payload)
     
     cred = Credential(
+        tenant_id=1,
         provider="mercado_livre",
         provider_type="marketplace",
         label="Test ML",

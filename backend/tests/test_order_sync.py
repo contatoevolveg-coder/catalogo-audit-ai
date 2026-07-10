@@ -1,7 +1,45 @@
+import os
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+from backend.app.database import Base, Tenant, Order, OrderItem, Product, Credential
 from backend.app.services.order_service import sync_ml_orders_for_credential
-from backend.app.database import Order, OrderItem, Product
+
+TEST_DB_PATH = "test_temp_ordersync.db"
+engine = create_engine(f"sqlite:///{TEST_DB_PATH}", connect_args={"check_same_thread": False})
+TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
+@pytest.fixture
+def db_session():
+    Base.metadata.create_all(bind=engine)
+    db = TestingSessionLocal()
+    # tenant padrão (id=1) para os registros de teste
+    db.add(Tenant(name="Tenant Teste"))
+    db.commit()
+    yield db
+    db.close()
+    Base.metadata.drop_all(bind=engine)
+    if os.path.exists(TEST_DB_PATH):
+        try:
+            os.remove(TEST_DB_PATH)
+        except Exception:
+            pass
+
+
+@pytest.fixture
+def test_product():
+    """Produto (ainda não persistido) no tenant padrão."""
+    return Product(
+        tenant_id=1,
+        title="Produto Teste",
+        marketplace="mercado_livre",
+        status="pending",
+        price=10.0,
+    )
+
 
 @pytest.fixture
 def mock_ml_fetch_orders():
@@ -27,11 +65,13 @@ def mock_ml_fetch_orders():
         ]
         yield mock
 
+
 @pytest.fixture
 def mock_ml_seller_id():
     with patch("backend.app.services.order_service.get_seller_id") as mock:
         mock.return_value = "12345"
         yield mock
+
 
 @pytest.fixture
 def mock_decrypt_secret():
@@ -39,24 +79,22 @@ def mock_decrypt_secret():
         mock.return_value = {"access_token": "test_token"}
         yield mock
 
+
 def test_sync_new_order_and_deduct_stock(db_session, test_product, mock_ml_fetch_orders, mock_ml_seller_id, mock_decrypt_secret):
-    # Prepare credential
-    from backend.app.database import Credential
-    cred = Credential(provider="mercado_livre", provider_type="marketplace", label="ML Test", encrypted_secret="test", masked_preview="test", scopes=[], status="valid")
+    cred = Credential(tenant_id=1, provider="mercado_livre", provider_type="marketplace", label="ML Test", encrypted_secret="test", masked_preview="test", scopes=[], status="valid")
     db_session.add(cred)
-    
-    # Prepare product matching the SKU
+
     test_product.erp_sku = "SKU-TEST-1"
     test_product.available_quantity = 10
     test_product.external_listing_id = "MLB123"
     db_session.add(test_product)
     db_session.commit()
 
-    synced, deductions = sync_ml_orders_for_credential(db_session, cred)
+    synced, deductions = sync_ml_orders_for_credential(db_session, cred, tenant_id=1)
 
     assert synced == 1
     assert deductions == 1
-    
+
     order = db_session.query(Order).filter_by(external_order_id="12345678").first()
     assert order is not None
     assert order.status == "paid"
@@ -71,31 +109,32 @@ def test_sync_new_order_and_deduct_stock(db_session, test_product, mock_ml_fetch
     db_session.refresh(test_product)
     assert test_product.available_quantity == 8
 
+
 def test_sync_existing_order_no_duplicate_deduction(db_session, test_product, mock_ml_fetch_orders, mock_ml_seller_id, mock_decrypt_secret):
-    from backend.app.database import Credential
-    cred = Credential(provider="mercado_livre", provider_type="marketplace", label="ML Test", encrypted_secret="test", masked_preview="test", scopes=[], status="valid")
+    cred = Credential(tenant_id=1, provider="mercado_livre", provider_type="marketplace", label="ML Test", encrypted_secret="test", masked_preview="test", scopes=[], status="valid")
     db_session.add(cred)
-    
+
     test_product.erp_sku = "SKU-TEST-1"
     test_product.available_quantity = 10
     db_session.add(test_product)
-    
-    # Add an existing order that was already deducted
+    db_session.commit()
+
     existing_order = Order(
+        tenant_id=1,
         marketplace="mercado_livre",
         external_order_id="12345678",
-        credential_id=1,
+        credential_id=cred.id,
         total_amount=100.5,
         status="paid",
-        stock_deducted=True
+        stock_deducted=True,
     )
     db_session.add(existing_order)
     db_session.commit()
 
-    synced, deductions = sync_ml_orders_for_credential(db_session, cred)
+    synced, deductions = sync_ml_orders_for_credential(db_session, cred, tenant_id=1)
 
     assert synced == 1
-    assert deductions == 0 # No new deduction
+    assert deductions == 0  # Nenhuma nova dedução
 
     db_session.refresh(test_product)
-    assert test_product.available_quantity == 10 # Remained the same
+    assert test_product.available_quantity == 10  # Permaneceu igual

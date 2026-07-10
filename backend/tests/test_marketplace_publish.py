@@ -75,6 +75,7 @@ def test_publish_happy_path(client, monkeypatch):
     
     # 1. Cria produto no banco
     product = Product(
+        tenant_id=1,
         title="Celular Apple iPhone 13 128GB",
         description="Original semi-novo.",
         price=3500.0,
@@ -91,6 +92,7 @@ def test_publish_happy_path(client, monkeypatch):
     
     # 2. Adiciona a sugestão aprovada
     suggestion = Suggestion(
+        tenant_id=1,
         product_id=product.id,
         suggested_title="Celular Apple iPhone 13 128GB Lacrado",
         suggested_description="iPhone 13 128GB novo em folha.",
@@ -108,7 +110,7 @@ def test_publish_happy_path(client, monkeypatch):
         secret_payload={"access_token": "MY-MOCKED-BEARER-TOKEN-999"},
         scopes=["read_products", "write_listing"]
     )
-    cred = credential_service.create_credential(db, cred_data)
+    cred = credential_service.create_credential(db, cred_data, tenant_id=1)
     cred.status = "valid"
     db.commit()
     db.refresh(cred)
@@ -172,6 +174,7 @@ def test_publish_blocked_by_pending_suggestion(client):
     db = TestingSessionLocal()
     # Produto com sugestão pendente
     product = Product(
+        tenant_id=1,
         title="Copo Stanley",
         marketplace="mercado_livre",
         status="pending"
@@ -180,6 +183,7 @@ def test_publish_blocked_by_pending_suggestion(client):
     db.commit()
     
     suggestion = Suggestion(
+        tenant_id=1,
         product_id=product.id,
         suggested_title="Copo Térmico",
         suggested_description="Desc",
@@ -194,7 +198,7 @@ def test_publish_blocked_by_pending_suggestion(client):
         label="ML Principal",
         secret_payload={"access_token": "token"},
         scopes=["read_products"]
-    ))
+    ), tenant_id=1)
     cred.status = "valid"
     db.commit()
     
@@ -216,6 +220,7 @@ def test_publish_blocked_by_invalid_credential(client):
     """Garante bloqueio 400 se a credencial não for válida ou for de outro provedor."""
     db = TestingSessionLocal()
     product = Product(
+        tenant_id=1,
         title="Caneca",
         marketplace="mercado_livre",
         status="pending"
@@ -224,6 +229,7 @@ def test_publish_blocked_by_invalid_credential(client):
     db.commit()
     
     suggestion = Suggestion(
+        tenant_id=1,
         product_id=product.id,
         suggested_title="Caneca Térmica",
         suggested_description="Desc",
@@ -239,7 +245,7 @@ def test_publish_blocked_by_invalid_credential(client):
         label="Shopee",
         secret_payload={"api_key": "token"},
         scopes=["read_products"]
-    ))
+    ), tenant_id=1)
     cred_shopee.status = "valid"
     
     # Caso 2: Provedor correto mas expirado
@@ -249,7 +255,7 @@ def test_publish_blocked_by_invalid_credential(client):
         label="ML",
         secret_payload={"access_token": "token"},
         scopes=["read_products"]
-    ))
+    ), tenant_id=1)
     cred_ml_exp.status = "expired"
     db.commit()
     
@@ -282,6 +288,7 @@ def test_publish_token_expired_401(client, monkeypatch):
     """Garante que erro 401 do ML altera a credencial para 'expired' e retorna 502."""
     db = TestingSessionLocal()
     product = Product(
+        tenant_id=1,
         title="Caneca",
         marketplace="mercado_livre",
         status="pending"
@@ -290,6 +297,7 @@ def test_publish_token_expired_401(client, monkeypatch):
     db.commit()
     
     suggestion = Suggestion(
+        tenant_id=1,
         product_id=product.id,
         suggested_title="Caneca Térmica",
         suggested_description="Desc",
@@ -304,7 +312,7 @@ def test_publish_token_expired_401(client, monkeypatch):
         label="ML",
         secret_payload={"access_token": "MY-EXPIRED-TOKEN"},
         scopes=["read_products"]
-    ))
+    ), tenant_id=1)
     cred.status = "valid"
     db.commit()
     
@@ -345,6 +353,7 @@ def test_publish_validation_error_400(client, monkeypatch):
     """Garante que erro 400 (ex.: categoria/atributos incorretos) retorna 502 com detalhes do ML."""
     db = TestingSessionLocal()
     product = Product(
+        tenant_id=1,
         title="Caneca",
         marketplace="mercado_livre",
         status="pending"
@@ -353,6 +362,7 @@ def test_publish_validation_error_400(client, monkeypatch):
     db.commit()
     
     suggestion = Suggestion(
+        tenant_id=1,
         product_id=product.id,
         suggested_title="Caneca Térmica",
         suggested_description="Desc",
@@ -367,7 +377,7 @@ def test_publish_validation_error_400(client, monkeypatch):
         label="ML",
         secret_payload={"access_token": "MY-TOKEN"},
         scopes=["read_products"]
-    ))
+    ), tenant_id=1)
     cred.status = "valid"
     db.commit()
     

@@ -62,9 +62,9 @@ def auth_headers(monkeypatch):
 def test_alert_low_stock(auth_headers):
     db = TestingSessionLocal()
     # 1 published low stock, 1 pending low stock, 1 published high stock
-    p1 = Product(title="Prod A", description="", category="", price=10.0, marketplace="mercado_livre", images=[], status="published", available_quantity=2)
-    p2 = Product(title="Prod B", description="", category="", price=10.0, marketplace="mercado_livre", images=[], status="pending", available_quantity=1)
-    p3 = Product(title="Prod C", description="", category="", price=10.0, marketplace="mercado_livre", images=[], status="published", available_quantity=10)
+    p1 = Product(tenant_id=1, title="Prod A", description="", category="", price=10.0, marketplace="mercado_livre", images=[], status="published", available_quantity=2)
+    p2 = Product(tenant_id=1, title="Prod B", description="", category="", price=10.0, marketplace="mercado_livre", images=[], status="pending", available_quantity=1)
+    p3 = Product(tenant_id=1, title="Prod C", description="", category="", price=10.0, marketplace="mercado_livre", images=[], status="published", available_quantity=10)
     db.add_all([p1, p2, p3])
     db.commit()
     p1_id = p1.id
@@ -93,14 +93,14 @@ def test_alert_expiring_credential(auth_headers, monkeypatch):
     
     # Credential expiring in 12h, NO refresh token
     enc_no_refresh = encrypt_secret({"access_token": "abc"})
-    c1 = Credential(provider="mercado_livre", provider_type="marketplace", label="C1", encrypted_secret=enc_no_refresh, masked_preview="", scopes=[], status="valid", token_expires_at=datetime.utcnow() + timedelta(hours=12))
+    c1 = Credential(tenant_id=1, provider="mercado_livre", provider_type="marketplace", label="C1", encrypted_secret=enc_no_refresh, masked_preview="", scopes=[], status="valid", token_expires_at=datetime.utcnow() + timedelta(hours=12))
     
     # Credential expiring in 12h, WITH refresh token
     enc_with_refresh = encrypt_secret({"access_token": "abc", "refresh_token": "xyz"})
-    c2 = Credential(provider="mercado_livre", provider_type="marketplace", label="C2", encrypted_secret=enc_with_refresh, masked_preview="", scopes=[], status="valid", token_expires_at=datetime.utcnow() + timedelta(hours=12))
+    c2 = Credential(tenant_id=1, provider="mercado_livre", provider_type="marketplace", label="C2", encrypted_secret=enc_with_refresh, masked_preview="", scopes=[], status="valid", token_expires_at=datetime.utcnow() + timedelta(hours=12))
     
     # Credential expiring in 48h, NO refresh token
-    c3 = Credential(provider="mercado_livre", provider_type="marketplace", label="C3", encrypted_secret=enc_no_refresh, masked_preview="", scopes=[], status="valid", token_expires_at=datetime.utcnow() + timedelta(hours=48))
+    c3 = Credential(tenant_id=1, provider="mercado_livre", provider_type="marketplace", label="C3", encrypted_secret=enc_no_refresh, masked_preview="", scopes=[], status="valid", token_expires_at=datetime.utcnow() + timedelta(hours=48))
     
     db.add_all([c1, c2, c3])
     db.commit()
@@ -118,13 +118,13 @@ def test_alert_expiring_credential(auth_headers, monkeypatch):
 
 def test_alert_low_seo_score(auth_headers):
     db = TestingSessionLocal()
-    p = Product(title="Prod SEO", description="", category="", price=10.0, marketplace="mercado_livre", images=[], status="audited")
+    p = Product(tenant_id=1, title="Prod SEO", description="", category="", price=10.0, marketplace="mercado_livre", images=[], status="audited")
     db.add(p)
     db.commit()
     p_id = p.id
     
     # Score 40 (should alert)
-    s1 = Suggestion(product_id=p.id, suggested_title="", suggested_description="", seo_score=40, missing_attributes=[], image_issues=[], status="pending")
+    s1 = Suggestion(tenant_id=1, product_id=p.id, suggested_title="", suggested_description="", seo_score=40, missing_attributes=[], image_issues=[], status="pending")
     db.add(s1)
     db.commit()
     db.close()
@@ -139,14 +139,14 @@ def test_alert_low_seo_score(auth_headers):
 
 def test_alert_answer_pending(auth_headers):
     db = TestingSessionLocal()
-    c = Credential(provider="mercado_livre", provider_type="marketplace", label="C1", encrypted_secret="", masked_preview="", scopes=[], status="valid")
+    c = Credential(tenant_id=1, provider="mercado_livre", provider_type="marketplace", label="C1", encrypted_secret="", masked_preview="", scopes=[], status="valid")
     db.add(c)
     db.commit()
     
     # Fetched 3 hours ago
-    q1 = CustomerQuestion(credential_id=c.id, ml_question_id="Q1", item_id="1", question_text="Q?", status="pending_draft", fetched_at=datetime.utcnow() - timedelta(hours=3))
+    q1 = CustomerQuestion(tenant_id=1, credential_id=c.id, ml_question_id="Q1", item_id="1", question_text="Q?", status="pending_draft", fetched_at=datetime.utcnow() - timedelta(hours=3))
     # Fetched 1 hour ago
-    q2 = CustomerQuestion(credential_id=c.id, ml_question_id="Q2", item_id="2", question_text="Q2?", status="pending_draft", fetched_at=datetime.utcnow() - timedelta(hours=1))
+    q2 = CustomerQuestion(tenant_id=1, credential_id=c.id, ml_question_id="Q2", item_id="2", question_text="Q2?", status="pending_draft", fetched_at=datetime.utcnow() - timedelta(hours=1))
     
     db.add_all([q1, q2])
     db.commit()
@@ -164,7 +164,7 @@ def test_alert_answer_pending(auth_headers):
 
 def test_mark_alert_read(auth_headers):
     db = TestingSessionLocal()
-    alert = Alert(type="test", severity="LOW", message="Msg", is_read=False)
+    alert = Alert(tenant_id=1, type="test", severity="LOW", message="Msg", is_read=False)
     db.add(alert)
     db.commit()
     alert_id = alert.id

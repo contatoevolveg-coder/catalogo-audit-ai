@@ -65,6 +65,7 @@ def auth_headers(monkeypatch):
 def test_sync_bling_stock_job(monkeypatch):
     db = TestingSessionLocal()
     cred = Credential(
+        tenant_id=1,
         provider="bling",
         provider_type="erp",
         label="My Bling",
@@ -97,6 +98,7 @@ def test_sync_bling_stock_job(monkeypatch):
 def test_sync_ml_questions_job(monkeypatch):
     db = TestingSessionLocal()
     cred = Credential(
+        tenant_id=1,
         provider="mercado_livre",
         provider_type="marketplace",
         label="My ML",
@@ -110,6 +112,7 @@ def test_sync_ml_questions_job(monkeypatch):
     db.refresh(cred)
     
     question = CustomerQuestion(
+        tenant_id=1,
         credential_id=cred.id,
         ml_question_id="12345",
         item_id="MLB123",
@@ -137,6 +140,7 @@ def test_sync_ml_questions_job(monkeypatch):
 def test_refresh_tokens_job(monkeypatch):
     db = TestingSessionLocal()
     cred = Credential(
+        tenant_id=1,
         provider="mercado_livre",
         provider_type="marketplace",
         label="My ML Pro",

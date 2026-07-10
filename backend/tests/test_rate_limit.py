@@ -51,7 +51,7 @@ def test_login_lockout_by_username(rate_client):
     db = TestingSessionLocal()
     # 1. Cria usuário de teste
     from backend.app.security.auth import hash_password
-    user = User(username="rate_user_1", hashed_password=hash_password("correct_password"))
+    user = User(tenant_id=1, username="rate_user_1", hashed_password=hash_password("correct_password"))
     db.add(user)
     db.commit()
 
@@ -75,8 +75,8 @@ def test_login_user_isolation(rate_client):
     """Garante que o bloqueio do usuário A não afeta o usuário B."""
     db = TestingSessionLocal()
     from backend.app.security.auth import hash_password
-    u1 = User(username="rate_user_a", hashed_password=hash_password("pass_a"))
-    u2 = User(username="rate_user_b", hashed_password=hash_password("pass_b"))
+    u1 = User(tenant_id=1, username="rate_user_a", hashed_password=hash_password("pass_a"))
+    u2 = User(tenant_id=1, username="rate_user_b", hashed_password=hash_password("pass_b"))
     db.add_all([u1, u2])
     db.commit()
 
@@ -127,7 +127,7 @@ def test_login_lockout_expiration(rate_client):
     """Garante que após passar o tempo de lockout (LOGIN_LOCKOUT_MINUTES), o login é liberado."""
     db = TestingSessionLocal()
     from backend.app.security.auth import hash_password
-    user = User(username="rate_user_exp", hashed_password=hash_password("correct_password"))
+    user = User(tenant_id=1, username="rate_user_exp", hashed_password=hash_password("correct_password"))
     db.add(user)
     db.commit()
 
@@ -163,7 +163,7 @@ def test_login_success_does_not_affect_lockout(rate_client):
     """Garante que login correto de primeira não gera restrição de lockout."""
     db = TestingSessionLocal()
     from backend.app.security.auth import hash_password
-    user = User(username="rate_user_clean", hashed_password=hash_password("correct_password"))
+    user = User(tenant_id=1, username="rate_user_clean", hashed_password=hash_password("correct_password"))
     db.add(user)
     db.commit()
 
