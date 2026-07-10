@@ -50,11 +50,12 @@ def render(api_url: str, headers: dict, current_user: dict) -> None:
     st.markdown("---")
 
     # Abas por status
-    tab_pendentes, tab_prontas, tab_respondidas, tab_descartadas = st.tabs([
-        "🆕 Pendentes / Novos",
-        "📝 Rascunhos Prontos",
-        "✅ Respondidas",
-        "🗑️ Descartadas"
+    tab_pendentes, tab_prontas, tab_respondidas, tab_descartadas, tab_erros = st.tabs([
+        "📥 Pendentes / Novos", 
+        "📝 Rascunhos Prontos", 
+        "✅ Respondidas", 
+        "🗑️ Descartadas",
+        "⛔ Requer atenção"
     ])
 
     def fetch_questions(status: str):
@@ -69,6 +70,9 @@ def render(api_url: str, headers: dict, current_user: dict) -> None:
     # Helper para renderizar a pergunta e opções
     def render_question_card(q, is_draft=False):
         with st.expander(f"De {q.get('asker_nickname', 'Comprador')} - Em: {q.get('ml_created_at', q.get('fetched_at', ''))}"):
+            if q.get('status') == 'error':
+                st.error(f"⛔ Requer atendimento manual — {q.get('review_reason','')}")
+            
             st.markdown(f"**Pergunta:** {q['question_text']}")
 
             if q.get('matched_product_id'):
@@ -157,9 +161,15 @@ def render(api_url: str, headers: dict, current_user: dict) -> None:
 
     with tab_descartadas:
         descartadas = fetch_questions("dismissed")
-        st.subheader("Perguntas Descartadas/Ignoradas")
+        st.subheader(f"Perguntas Descartadas/Ignoradas")
         for q in descartadas:
             render_question_card(q)
+
+    with tab_erros:
+        erros = fetch_questions("error")
+        st.subheader(f"{len(erros)} Pergunta(s) com Falha ou Necessidade de Revisão Urgente")
+        for q in erros:
+            render_question_card(q, is_draft=(q.get("ai_suggested_answer") is not None))
 
     # Top metrics
     total_pendentes = len(pendentes)

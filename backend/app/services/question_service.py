@@ -1,13 +1,16 @@
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
+import logging
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
-from backend.app.database import CustomerQuestion, Credential, Product, ExternalCallLog
+from backend.app.database import CustomerQuestion, Credential, Product, ExternalCallLog, Alert
 from backend.app.security.crypto import decrypt_secret
 from backend.app.integrations.mercado_livre import fetch_unanswered_questions, submit_answer
 from backend.app.agent import draft_question_answer
 from backend.app.services.oauth_service import refresh_if_needed
+
+logger = logging.getLogger(__name__)
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
@@ -24,6 +27,38 @@ def _parse_iso_datetime(date_str: str) -> Optional[datetime]:
             return parse(date_str)
         except Exception:
             return None
+
+def _escalate_to_human(question: CustomerQuestion, db: Session, reason: str) -> None:
+    reason_label = ""
+    if reason == "draft_failed":
+        reason_label = "IA não conseguiu gerar rascunho"
+    elif reason == "low_confidence":
+        reason_label = "IA não teve confiança na resposta e pediu revisão"
+    elif reason == "send_failed":
+        reason_label = "Falha ao enviar a resposta ao Mercado Livre"
+    
+    # Dedup
+    existing_alert = db.query(Alert).filter(
+        Alert.type == "ai_answer_failed",
+        Alert.message.like(f"Pergunta ID {question.id} (%"),
+        Alert.is_read == False,
+        Alert.tenant_id == question.tenant_id
+    ).first()
+    
+    if existing_alert:
+        return
+        
+    preview = question.question_text[:30] + "..." if len(question.question_text) > 30 else question.question_text
+    
+    alert = Alert(
+        tenant_id=question.tenant_id,
+        type="ai_answer_failed",
+        severity="HIGH",
+        message=f"Pergunta ID {question.id} ('{preview}') precisa de resposta manual — motivo: {reason_label}.",
+        is_read=False
+    )
+    db.add(alert)
+    db.commit()
 
 def sync_pending_questions(credential_id: int, db: Session, tenant_id: int, max_fetch: int = 20) -> Dict[str, int]:
     """Sincroniza perguntas não respondidas do Mercado Livre no banco de dados local."""
@@ -133,11 +168,19 @@ def generate_draft_answer(question_id: int, db: Session, tenant_id: int) -> Cust
             }
 
     # Gera a sugestão de resposta via Gemini
-    suggested_answer, needs_human_review, review_reason, tokens_in, tokens_out, latency = draft_question_answer(
-        question.question_text,
-        product_context,
-        "mercado_livre"
-    )
+    try:
+        suggested_answer, needs_human_review, review_reason, tokens_in, tokens_out, latency = draft_question_answer(
+            question.question_text,
+            product_context,
+            "mercado_livre"
+        )
+    except Exception as e:
+        logger.exception(f"Erro ao gerar rascunho de resposta (pergunta ID {question.id}): {e}")
+        question.status = "error"
+        question.review_reason = "Falha ao gerar rascunho (motor de IA indisponível)."
+        _escalate_to_human(question, db, "draft_failed")
+        db.commit()
+        return question
 
     question.ai_suggested_answer = suggested_answer
     question.needs_human_review = needs_human_review
@@ -146,6 +189,9 @@ def generate_draft_answer(question_id: int, db: Session, tenant_id: int) -> Cust
     question.tokens_output = tokens_out
     question.latency_seconds = latency
     question.status = "draft_ready"
+
+    if needs_human_review:
+        _escalate_to_human(question, db, "low_confidence")
 
     db.commit()
     db.refresh(question)
@@ -229,6 +275,7 @@ def send_answer(question_id: int, credential_id: int, db: Session, tenant_id: in
             question.review_reason = "Token expirado no Mercado Livre (401)."
         else:
             question.review_reason = f"Erro no Mercado Livre: {body.get('error', 'Erro desconhecido')}"
+            _escalate_to_human(question, db, "send_failed")
 
     # Grava no log de chamadas externas sem vazar o token
     log_detail = {
