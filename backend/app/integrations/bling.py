@@ -1,10 +1,66 @@
 import time
+import hmac
+import hashlib
 import httpx
 import logging
 import base64
 from typing import Tuple, Any, Optional
 
 logger = logging.getLogger(__name__)
+
+
+def verify_webhook_signature(raw_body: bytes, signature_header: Optional[str], client_secret: str) -> bool:
+    """Valida a assinatura de um webhook do Bling (header X-Bling-Signature-256).
+
+    Formato: "sha256=<hex>", HMAC-SHA256 do corpo bruto (bytes) da requisição,
+    usando o Client Secret do app cadastrado no Bling Developers como chave.
+    Comparação em tempo constante (hmac.compare_digest) para evitar timing attack.
+    """
+    if not signature_header or not client_secret:
+        return False
+    if not signature_header.startswith("sha256="):
+        return False
+    received_hash = signature_header.split("=", 1)[1].strip()
+    expected_hash = hmac.new(
+        client_secret.encode("utf-8"), raw_body, hashlib.sha256
+    ).hexdigest()
+    return hmac.compare_digest(received_hash, expected_hash)
+
+
+def get_product_by_id(access_token: str, produto_id: int) -> Tuple[str, Any]:
+    """Consulta o Bling ERP v3 para obter um produto pelo ID interno do Bling.
+
+    GET /produtos/{id}
+    Retorna (status, dados). Status: success | not_found | expired | error
+    """
+    url = f"https://api.bling.com.br/Api/v3/produtos/{produto_id}"
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Accept": "application/json"
+    }
+    try:
+        response = httpx.get(url, headers=headers, timeout=8.0)
+        if response.status_code == 200:
+            body = response.json()
+            data = body.get("data")
+            if data:
+                return "success", data
+            return "not_found", {"message": f"Produto com ID {produto_id} não encontrado"}
+        elif response.status_code in [401, 403]:
+            return "expired", {"message": "Token de acesso expirado ou inválido"}
+        elif response.status_code == 404:
+            return "not_found", {"message": f"Produto com ID {produto_id} não encontrado"}
+        else:
+            try:
+                err_payload = response.json()
+            except Exception:
+                err_payload = {"detail": response.text}
+            return "error", err_payload
+    except httpx.RequestError as e:
+        return "error", {"message": f"Erro de rede ao conectar com o Bling: {str(e)}"}
+    except Exception as e:
+        return "error", {"message": f"Erro inesperado: {str(e)}"}
+
 
 def find_product_by_sku(access_token: str, sku: str) -> Tuple[str, Any]:
     """Consulta o Bling ERP v3 para localizar um produto pelo SKU (código).

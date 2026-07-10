@@ -343,6 +343,28 @@ class Alert(Base):
     credential = relationship("Credential")
 
 
+class WebhookEvent(Base):
+    """Registro de eventos de webhook recebidos de provedores externos (ex.: Bling).
+
+    Garante idempotência (o Bling pode reenviar o mesmo evento) e serve de log de
+    auditoria de tudo que chegou, mesmo quando não foi possível processar.
+    """
+    __tablename__ = "webhook_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    provider = Column(String, nullable=False, index=True)  # "bling"
+    external_event_id = Column(String, unique=True, index=True, nullable=False)
+    event_type = Column(String, nullable=True, index=True)  # ex.: "estoque.atualizado"
+    company_id = Column(String, nullable=True, index=True)
+    raw_payload = Column(JSON, nullable=True)
+    matched_product_id = Column(Integer, ForeignKey("products.id", ondelete="SET NULL"), nullable=True)
+    matched_tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=True)
+    status = Column(String, nullable=False, default="received")  # received|processed|no_match|error
+    error_detail = Column(Text, nullable=True)
+    received_at = Column(DateTime, default=_utcnow, nullable=False)
+    processed_at = Column(DateTime, nullable=True)
+
+
 def init_db():
     Base.metadata.create_all(bind=engine)
 
