@@ -5,8 +5,74 @@ import httpx
 import logging
 import base64
 from typing import Tuple, Any, Optional
+from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
+
+
+def check_credential_bling(secret_payload: dict, db: Session) -> Tuple[str, Optional[str]]:
+    """Valida a conectividade das credenciais do Bling ERP na API oficial v3.
+
+    Realiza um GET leve em /produtos?limite=1 com o access_token. Registra a
+    chamada em ExternalCallLog sem nunca expor o segredo.
+    """
+    from backend.app.database import ExternalCallLog
+
+    token = secret_payload.get("access_token")
+    if not token:
+        return "error", "Chave 'access_token' ausente no payload do segredo."
+
+    url = "https://api.bling.com.br/Api/v3/produtos"
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+    params = {"limite": 1}
+
+    start_time = time.time()
+    success = False
+    status_code = None
+    status = "untested"
+    status_detail = None
+
+    try:
+        response = httpx.get(url, headers=headers, params=params, timeout=5.0)
+        status_code = response.status_code
+        if status_code == 200:
+            status = "valid"
+            success = True
+        elif status_code in [401, 403]:
+            status = "expired"
+            status_detail = "Token inválido ou expirado"
+        elif status_code == 429:
+            status = "error"
+            status_detail = "Rate limit no Bling (429)"
+        else:
+            status = "error"
+            status_detail = f"HTTP {status_code}"
+    except httpx.RequestError as e:
+        status = "error"
+        status_detail = f"Erro de rede: {str(e)}"
+    except Exception as e:
+        status = "error"
+        status_detail = f"Erro inesperado: {str(e)}"
+
+    latency = time.time() - start_time
+
+    log_detail = {
+        "status_code": status_code,
+        "status": status,
+        "status_detail": status_detail,
+    }
+    db_log = ExternalCallLog(
+        kind="credential_check",
+        target_url=url,
+        status_code=status_code,
+        success=success,
+        latency_seconds=latency,
+        detail=log_detail,
+    )
+    db.add(db_log)
+    db.commit()
+
+    return status, status_detail
 
 
 def verify_webhook_signature(raw_body: bytes, signature_header: Optional[str], client_secret: str) -> bool:

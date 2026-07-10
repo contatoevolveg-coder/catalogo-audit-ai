@@ -2,11 +2,13 @@ from typing import Tuple, Optional, Dict, Callable
 from sqlalchemy.orm import Session
 from backend.app.integrations.mercado_livre import check_credential_ml
 from backend.app.integrations.shopee import check_credential_shopee
+from backend.app.integrations.bling import check_credential_bling
 from backend.app.config import SHOPEE_PARTNER_ID, SHOPEE_PARTNER_KEY
 
 # Mapeamento dinâmico de verificadores de credenciais por provedor
 CHECKERS: Dict[str, Callable[[dict, Session], Tuple[str, Optional[str]]]] = {
     "mercado_livre": check_credential_ml,
+    "bling": check_credential_bling,
 }
 
 
