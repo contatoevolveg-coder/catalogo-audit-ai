@@ -33,7 +33,13 @@ def get_category_suggestions(
             detail="O título não pode ser vazio."
         )
     if provider == "mercado_livre":
-        return ml_predict_category(title)
+        try:
+            return ml_predict_category(title)
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Falha ao consultar categorias no Mercado Livre. Tente novamente."
+            )
     return [] # Shopee não tem predict_category implementado publicamente aqui
 
 @router.post(
@@ -47,7 +53,9 @@ def publish_product(
     tenant_id: int = Depends(get_current_tenant)
 ):
     """Envia o anúncio com o título e descrição aprovados para o Marketplace de forma síncrona."""
-    credential = db.query(Credential).filter(Credential.id == data.credential_id).first()
+    credential = db.query(Credential).filter(
+        Credential.id == data.credential_id, Credential.tenant_id == tenant_id
+    ).first()
     if not credential:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Credencial não encontrada.")
 

@@ -184,6 +184,8 @@ def sync_all_linked_products(credential_id: int, db: Session, tenant_id: int, ma
                 error_detail=str(e),
                 created_at=_utcnow()
             )
+            db.add(err_log)
+            db.commit()
             logs.append(err_log)
 
     return logs

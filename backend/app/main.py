@@ -422,8 +422,12 @@ def list_logs(db: Session = Depends(get_db), tenant_id: int = Depends(get_curren
     return db.query(AuditLog).filter(AuditLog.tenant_id == tenant_id).order_by(AuditLog.created_at.desc()).all()
 
 @app.get("/scheduler/status", response_model=List[SchedulerRunResponse])
-def get_scheduler_status(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """Retorna as últimas execuções de jobs do scheduler agendado."""
+def get_scheduler_status(db: Session = Depends(get_db), admin_user: User = Depends(require_admin)):
+    """Retorna as últimas execuções de jobs do scheduler agendado.
+
+    Restrito a admins: os registros do scheduler são globais (sem escopo de
+    tenant) e o campo 'errors' pode conter detalhes de execução de vários tenants.
+    """
     return db.query(SchedulerRun).order_by(SchedulerRun.start_time.desc()).limit(100).all()
 
 # -------------------------------------------------------------

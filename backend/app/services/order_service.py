@@ -108,9 +108,13 @@ def sync_ml_orders_for_credential(db: Session, credential: Credential, tenant_id
                             product.available_quantity = max(0, product.available_quantity - item.quantity)
                             deducted_any = True
                 
+                # Só marca como deduzido quando houve baixa efetiva. Caso o produto
+                # correspondente ainda não exista localmente (item.product_id None),
+                # mantém stock_deducted=False para permitir baixa retroativa após a
+                # importação do produto (evita perder a dedução).
                 if deducted_any:
                     stock_deductions += 1
-                db_order.stock_deducted = True
+                    db_order.stock_deducted = True
 
             synced += 1
 

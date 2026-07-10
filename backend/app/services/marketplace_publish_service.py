@@ -106,7 +106,7 @@ def publish_product_to_ml(
         "category_id": category_id,
         "price": product.price,
         "currency_id": "BRL",
-        "available_quantity": product.available_quantity or 1,
+        "available_quantity": product.available_quantity if product.available_quantity is not None else 1,
         "buying_mode": "buy_it_now",
         "condition": product.condition or "new",
         "listing_type_id": DEFAULT_ML_LISTING_TYPE,
@@ -252,7 +252,7 @@ def publish_product_to_shopee(
         "weight": 1.0,
         "item_name": title,
         "item_status": "NORMAL",
-        "normal_stock": product.available_quantity or 1,
+        "normal_stock": product.available_quantity if product.available_quantity is not None else 1,
         "category_id": int(category_id),
         "logistic_info": [{"logistic_id": 10004, "enabled": True}], # Logistic genérico fallback
         "image": {"image_id_list": []}

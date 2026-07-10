@@ -260,7 +260,7 @@ def confirm_import(
 
     if batch.status != "validated":
         # Força validação se ainda não foi feita
-        validate_batch(batch_id, db)
+        validate_batch(batch_id, db, tenant_id)
         db.refresh(batch)
 
     valid_rows = db.query(ImportRow).filter(

@@ -16,26 +16,34 @@ def check_and_generate_alerts(db: Session, tenant_id: int) -> int:
     alerts_created = 0
     
     # 1. Estoque de produto publicado <= limite (default 5)
+    # Query em lote (evita N+1 com centenas de produtos publicados).
     try:
-        products = db.query(Product).filter(Product.status == "published", Product.tenant_id == tenant_id).all()
-        for prod in products:
-            if prod.available_quantity is not None and prod.available_quantity <= 5:
-                existing = db.query(Alert).filter(
+        low_stock_products = db.query(Product).filter(
+            Product.status == "published",
+            Product.tenant_id == tenant_id,
+            Product.available_quantity.isnot(None),
+            Product.available_quantity <= 5,
+        ).all()
+        if low_stock_products:
+            candidate_ids = [p.id for p in low_stock_products]
+            existing_ids = {
+                row[0] for row in db.query(Alert.product_id).filter(
                     Alert.type == "low_stock",
-                    Alert.product_id == prod.id,
-                    Alert.is_read == False
-                ).first()
-                if not existing:
-                    alert = Alert(
+                    Alert.is_read == False,
+                    Alert.product_id.in_(candidate_ids),
+                ).all()
+            }
+            for prod in low_stock_products:
+                if prod.id not in existing_ids:
+                    db.add(Alert(
                         tenant_id=tenant_id,
                         type="low_stock",
                         severity="HIGH",
                         product_id=prod.id,
                         message=f"Estoque baixo para o produto '{prod.title}': restam apenas {prod.available_quantity} unidades.",
                         is_read=False,
-                        created_at=now
-                    )
-                    db.add(alert)
+                        created_at=now,
+                    ))
                     alerts_created += 1
     except Exception as e:
         logger.error(f"Erro ao verificar regra low_stock: {e}")
@@ -76,28 +84,38 @@ def check_and_generate_alerts(db: Session, tenant_id: int) -> int:
     except Exception as e:
         logger.error(f"Erro ao verificar regra credential_expiring: {e}")
 
-    # 3. Sugestão mais recente com seo_score < 50
+    # 3. Sugestão mais recente com seo_score < 50 (query em lote, dedup por produto)
     try:
-        suggestions = db.query(Suggestion).filter(Suggestion.seo_score < 50, Suggestion.tenant_id == tenant_id).all()
-        for sug in suggestions:
-            prod = db.query(Product).filter(Product.id == sug.product_id).first()
-            if prod:
-                existing = db.query(Alert).filter(
+        low_sugs = db.query(Suggestion).filter(
+            Suggestion.seo_score < 50, Suggestion.tenant_id == tenant_id
+        ).all()
+        product_ids = list({s.product_id for s in low_sugs})
+        if product_ids:
+            prods = {p.id: p for p in db.query(Product).filter(Product.id.in_(product_ids)).all()}
+            # menor score por produto (pior caso)
+            score_by_prod = {}
+            for s in low_sugs:
+                if s.product_id not in score_by_prod or s.seo_score < score_by_prod[s.product_id]:
+                    score_by_prod[s.product_id] = s.seo_score
+            existing_ids = {
+                row[0] for row in db.query(Alert.product_id).filter(
                     Alert.type == "low_seo_score",
-                    Alert.product_id == prod.id,
-                    Alert.is_read == False
-                ).first()
-                if not existing:
-                    alert = Alert(
+                    Alert.is_read == False,
+                    Alert.product_id.in_(product_ids),
+                ).all()
+            }
+            for pid in product_ids:
+                prod = prods.get(pid)
+                if prod and pid not in existing_ids:
+                    db.add(Alert(
                         tenant_id=tenant_id,
                         type="low_seo_score",
                         severity="MEDIUM",
-                        product_id=prod.id,
-                        message=f"O produto '{prod.title}' possui um SEO score baixo ({sug.seo_score}/100) e precisa de otimização.",
+                        product_id=pid,
+                        message=f"O produto '{prod.title}' possui um SEO score baixo ({score_by_prod[pid]}/100) e precisa de otimização.",
                         is_read=False,
-                        created_at=now
-                    )
-                    db.add(alert)
+                        created_at=now,
+                    ))
                     alerts_created += 1
     except Exception as e:
         logger.error(f"Erro ao verificar regra low_seo_score: {e}")
@@ -112,9 +130,11 @@ def check_and_generate_alerts(db: Session, tenant_id: int) -> int:
             if q.fetched_at:
                 elapsed = (now - q.fetched_at).total_seconds() / 3600.0
                 if elapsed > 2.0: # 2 horas
+                    # Padrão ancorado ao formato real da mensagem ("A Pergunta ID {id} (")
+                    # para evitar falso-positivo entre IDs prefixo (ex.: 5 casar com 50).
                     existing = db.query(Alert).filter(
                         Alert.type == "answer_pending",
-                        Alert.message.like(f"%ID {q.id}%"),
+                        Alert.message.like(f"A Pergunta ID {q.id} (%"),
                         Alert.is_read == False
                     ).first()
                     if not existing:

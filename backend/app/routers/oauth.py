@@ -29,11 +29,11 @@ def authorize_provider(
         return {"authorization_url": url}
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"Erro ao iniciar autorização para {provider}: {str(e)}")
+    except Exception:
+        logger.exception(f"Erro ao iniciar autorização para {provider}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Erro interno ao iniciar autorização: {str(e)}"
+            detail="Erro interno ao iniciar autorização."
         )
 
 @router.post("/{provider}/callback", response_model=CredentialResponse)
@@ -60,28 +60,50 @@ def callback_provider(
         return cred
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"Erro no callback OAuth para {provider}: {str(e)}")
+    except Exception:
+        logger.exception(f"Erro no callback OAuth para {provider}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Erro interno no processamento do callback: {str(e)}"
+            detail="Erro interno no processamento do callback."
         )
+
+
+def _oauth_error_page(message: str, status_code: int = 400) -> HTMLResponse:
+    return HTMLResponse(
+        content=f"""
+        <html><body style="font-family: sans-serif; text-align: center; padding: 60px;">
+            <h2>❌ Falha ao conectar</h2>
+            <p>{message}</p>
+            <p style="margin-top: 20px; font-size: 14px; color: #666;">
+                Sugestão: Feche esta aba, volte ao painel, gere um NOVO link de autorização e tente novamente.
+            </p>
+        </body></html>
+        """,
+        status_code=status_code,
+    )
 
 
 @router.get("/{provider}/callback", response_class=HTMLResponse)
 def callback_provider_redirect(
     provider: str,
-    code: str,
-    state: str,
+    code: Optional[str] = None,
+    state: Optional[str] = None,
+    error: Optional[str] = None,
+    error_description: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
     """Endpoint que o navegador acessa diretamente após o redirect do provedor OAuth2.
 
     O ML/Bling/Shopee redireciona o navegador do usuário (GET, sem Authorization
-    header) para OAUTH_REDIRECT_BASE_URL + este caminho, com 'code' e 'state' na
-    query string. Completa o mesmo handle_callback usado pelo fluxo POST e exibe
-    uma página HTML simples de confirmação.
+    header) para OAUTH_REDIRECT_BASE_URL + este caminho. Em caso de autorização
+    concedida, traz 'code' e 'state'; em caso de negação/erro, traz 'error' (e
+    pode não trazer 'code'). Tratamos ambos com página HTML amigável.
     """
+    # Usuário negou/cancelou a autorização, ou o provedor retornou erro
+    if error or not code or not state:
+        detail = error_description or error or "Autorização não concluída (código ausente)."
+        return _oauth_error_page(f"O provedor retornou: {detail}")
+
     try:
         cred = handle_callback(
             provider=provider,
@@ -98,26 +120,10 @@ def callback_provider_redirect(
         </body></html>
         """
     except HTTPException as e:
-        return HTMLResponse(
-            content=f"""
-            <html><body style="font-family: sans-serif; text-align: center; padding: 60px;">
-                <h2>❌ Falha ao conectar</h2>
-                <p>{e.detail}</p>
-                <p style="margin-top: 20px; font-size: 14px; color: #666;">
-                    Sugestão: Feche esta aba, volte ao painel, gere um NOVO link de autorização e tente novamente.
-                </p>
-            </body></html>
-            """,
-            status_code=e.status_code
-        )
-    except Exception as e:
-        logger.error(f"Erro no callback OAuth (GET) para {provider}: {str(e)}")
-        return HTMLResponse(
-            content=f"""
-            <html><body style="font-family: sans-serif; text-align: center; padding: 60px;">
-                <h2>❌ Erro interno</h2>
-                <p>{str(e)}</p>
-            </body></html>
-            """,
-            status_code=500
+        return _oauth_error_page(e.detail, status_code=e.status_code)
+    except Exception:
+        logger.exception(f"Erro inesperado no callback OAuth (GET) para {provider}")
+        return _oauth_error_page(
+            "Erro interno ao processar a autorização. Tente novamente.",
+            status_code=500,
         )
