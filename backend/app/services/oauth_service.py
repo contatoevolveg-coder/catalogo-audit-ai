@@ -78,9 +78,9 @@ def handle_callback(provider: str, code: str, state: str, label: str, db: Sessio
     if db_state.provider != provider:
         raise HTTPException(status_code=400, detail="State não corresponde ao provedor")
 
-    # Verificar se expirou (ex: 10 minutos)
+    # Verificar se expirou (30 minutos — dá margem para login lento no provedor)
     time_diff = datetime.datetime.utcnow() - db_state.created_at
-    if time_diff.total_seconds() > 600:
+    if time_diff.total_seconds() > 1800:
         db.delete(db_state)
         db.commit()
         raise HTTPException(status_code=400, detail="State expirado")

@@ -104,6 +104,10 @@ def callback_provider_redirect(
         detail = error_description or error or "Autorização não concluída (código ausente)."
         return _oauth_error_page(f"O provedor retornou: {detail}")
 
+    # Log do state recebido para diagnóstico (truncado por segurança)
+    state_preview = state[:8] + "..." if state and len(state) > 8 else state
+    logger.info(f"[OAuth callback] provider={provider} state_prefix={state_preview} code_present={bool(code)}")
+
     try:
         cred = handle_callback(
             provider=provider,
@@ -120,6 +124,15 @@ def callback_provider_redirect(
         </body></html>
         """
     except HTTPException as e:
+        if e.status_code == 400 and "State" in e.detail:
+            # Mostra o state recebido para ajudar a diagnosticar mismatch com Bling
+            logger.warning(f"[OAuth callback] State mismatch: recebido={state!r}")
+            detail_diag = (
+                f"{e.detail}<br><br>"
+                f"<small style='color:#888'>State recebido do Bling: <code>{state}</code><br>"
+                f"Se este valor parecer diferente do esperado, o Bling pode estar alterando o parâmetro.</small>"
+            )
+            return _oauth_error_page(detail_diag, status_code=e.status_code)
         return _oauth_error_page(e.detail, status_code=e.status_code)
     except Exception:
         logger.exception(f"Erro inesperado no callback OAuth (GET) para {provider}")
