@@ -5,7 +5,7 @@ import pandas as pd
 from datetime import datetime
 # No Streamlit Cloud, a pasta do script (dashboard/) é que entra no sys.path —
 # não a raiz do repo. Por isso importamos "tabs" direto, sem o prefixo "dashboard.".
-from tabs import imports_tab, credentials_tab, marketplace_publish_tab, erp_sync_tab, alerts_tab, orders_tab, listings_tab, users_tab
+from tabs import imports_tab, credentials_tab, marketplace_publish_tab, erp_sync_tab, alerts_tab, orders_tab, listings_tab, users_tab, reconciliation_tab, customer_service_tab
 
 
 # Configuração da página Streamlit
@@ -333,19 +333,22 @@ except Exception:
 alert_tab_label = f"🔔 Alertas ({unread_alerts_count})" if unread_alerts_count > 0 else "🔔 Alertas"
 
 # Cria abas principais no dashboard
-(tab_catalogo, tab_listings, tab_cadastro, tab_credentials, tab_publish,
- tab_sync, tab_orders, tab_users, tab_logs, tab_alerts) = st.tabs([
+(tab_catalogo, tab_listings, tab_customer_service, tab_cadastro, tab_credentials, tab_publish,
+ tab_sync, tab_orders, tab_reconciliation, tab_users, tab_logs, tab_alerts) = st.tabs([
     "📋 Catálogo & Auditoria",
     "🛒 Anúncios ML",
+    "🗣️ Perguntas CL",
     "📥 Cadastro em Massa",
     "🔑 Credenciais",
     "🚀 Publicação ML",
     "🔗 Sincronização Bling",
     "📦 Pedidos",
+    "🔍 Reconciliação",
     "👥 Usuários",
     "📊 Logs de Custos & Tokens",
     alert_tab_label
 ])
+
 
 # -------------------------------------------------------------
 # ABA 1: Catálogo & Auditoria
@@ -613,6 +616,10 @@ with tab_catalogo:
 with tab_listings:
     listings_tab.render(API_URL, admin_headers, current_user)
 
+with tab_customer_service:
+    customer_service_tab.render(API_URL, admin_headers, current_user)
+
+
 with tab_users:
     users_tab.render(API_URL, admin_headers, current_user)
 
@@ -644,7 +651,11 @@ with tab_sync:
 with tab_orders:
     orders_tab.render(API_URL, admin_headers)
 
-
+# -------------------------------------------------------------
+# ABA: Reconciliação
+# -------------------------------------------------------------
+with tab_reconciliation:
+    reconciliation_tab.render(API_URL, token)
 # -------------------------------------------------------------
 # ABA 2: Logs de Custos & Tokens
 # -------------------------------------------------------------

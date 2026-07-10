@@ -216,6 +216,20 @@ class ErpSyncLog(Base):
     product = relationship("Product")
     credential = relationship("Credential")
 
+class StockReconciliationLog(Base):
+    __tablename__ = "stock_reconciliation_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False, index=True)
+    product_id = Column(Integer, ForeignKey("products.id", ondelete="CASCADE"), nullable=False, index=True)
+    bling_quantity = Column(Integer, nullable=False)
+    marketplace_quantity = Column(Integer, nullable=False)
+    category = Column(String, nullable=False, index=True)  # vendendo_fantasma, estoque_preso, divergencia_quantidade, ok
+    checked_at = Column(DateTime, default=_utcnow, nullable=False)
+
+    # Relacionamentos
+    product = relationship("Product")
+
 
 
 

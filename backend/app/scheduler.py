@@ -13,6 +13,8 @@ from backend.app.config import (
     SCHEDULER_REFRESH_TOKENS_MINUTES,
     SCHEDULER_CHECK_ALERTS_MINUTES
 )
+from backend.app.services.stock_reconciliation_service import reconcile_stock
+
 
 logger = logging.getLogger("scheduler")
 scheduler = None
@@ -223,7 +225,6 @@ def generate_alerts_job():
     db = SessionLocal()
     start_time = datetime.now(timezone.utc)
     items_processed = 0
-    errors_list = []
     
     try:
         from backend.app.services.alert_service import check_and_generate_alerts
@@ -242,19 +243,23 @@ def generate_alerts_job():
         db.add(run_record)
         db.commit()
     except Exception as e:
-        logger.error(f"Erro geral no job generate_alerts_job: {e}")
-        try:
-            run_record = SchedulerRun(
-                job="generate_alerts",
-                start_time=start_time,
-                end_time=datetime.now(timezone.utc),
-                items_processed=items_processed,
-                errors=str(e)
-            )
-            db.add(run_record)
-            db.commit()
-        except Exception as db_err:
-            logger.error(f"Erro ao persistir erro de scheduler no banco: {db_err}")
+        logger.error(f"[Scheduler] Erro global na verificação de alertas: {e}")
+    finally:
+        db.close()
+
+def check_stock_reconciliation_job():
+    """Roda a reconciliação de estoque de forma assíncrona para todos os tenants."""
+    logger.info("[Scheduler] Iniciando verificação de reconciliação de estoque (todos os tenants)...")
+    db = SessionLocal()
+    try:
+        tenants = db.query(Tenant).all()
+        for t in tenants:
+            try:
+                reconcile_stock(t.id, db)
+            except Exception as e:
+                logger.error(f"[Scheduler] Erro ao reconciliar estoque do tenant {t.id}: {e}")
+    except Exception as e:
+        logger.error(f"[Scheduler] Erro global na reconciliação de estoque: {e}")
     finally:
         db.close()
 
@@ -302,6 +307,17 @@ def start_scheduler():
         id="sync_orders",
         replace_existing=True
     )
+    
+    # 5. Job de reconciliação de estoque
+    minutes_reconciliation = int(os.getenv("SCHEDULER_RECONCILIATION_MINUTES", "30"))
+    scheduler.add_job(
+        check_stock_reconciliation_job,
+        "interval",
+        minutes=minutes_reconciliation,
+        id="stock_reconciliation",
+        replace_existing=True
+    )
+    logger.info(f"[Scheduler] Job de reconciliação configurado (intervalo: {minutes_reconciliation} min).")
     
     scheduler.start()
     logger.info("BackgroundScheduler iniciado com sucesso.")

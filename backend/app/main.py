@@ -19,6 +19,7 @@ from backend.app.schemas import (
     ApproveSuggestionRequest, FeedbackStatsResponse, ProductUpdateRequest, ProductDeleteRequest
 )
 from backend.app.routers import imports, credentials, marketplace_publish, erp_bling, auth, customer_questions, oauth, orders, webhooks
+from backend.app.routers.stock_reconciliation import router as stock_reconciliation_router
 from backend.app.services.audit_service import perform_product_audit
 from backend.app.services.marketplace_manage_service import update_product as svc_update_product, delete_product as svc_delete_product
 from backend.app.security.dependencies import get_current_user, get_current_tenant, require_admin
@@ -79,6 +80,7 @@ app.include_router(customer_questions.router)
 app.include_router(oauth.router)
 app.include_router(orders.router)
 app.include_router(webhooks.router)
+app.include_router(stock_reconciliation_router)
 
 
 @app.get("/", include_in_schema=False)
